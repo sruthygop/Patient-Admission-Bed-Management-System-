@@ -171,7 +171,7 @@ const Sidebar = () => {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          <p className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold px-3 mb-2">Navigation</p>
+          {/* <p className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold px-3 mb-2">Navigation</p> */}
           {visibleLinks.map((link) => {
             const Icon = link.icon;
             return (
