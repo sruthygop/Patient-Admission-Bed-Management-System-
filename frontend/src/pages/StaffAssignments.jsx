@@ -30,10 +30,10 @@ const StaffAssignments = () => {
             setAssignments(assignmentsRes.data);
             setWards(wardsRes.data);
 
-            // Only admin can fetch users list
-            if (user?.role === 'admin') {
+            // Admin and CMO can fetch users list
+            if (user?.role === 'admin' || user?.role === 'cmo') {
                 const usersRes = await api.get('/api/v1/auth/users');
-                setStaff(usersRes.data.filter(u => u.role === 'staff'));
+                setStaff(usersRes.data.filter(u => ['nurse', 'receptionist', 'staff'].includes(u.role)));
             }
         } catch (err) {
             console.error('Failed to load staff assignments:', err);
@@ -107,12 +107,12 @@ const StaffAssignments = () => {
                 <div>
                     <h2 className="text-xl font-bold text-slate-800">Staff Assignments</h2>
                     <p className="text-sm text-slate-400 mt-1">
-                        {user?.role === 'admin'
+                        {(user?.role === 'admin' || user?.role === 'cmo')
                             ? 'Assign nurses and staff to wards for shifts'
                             : 'View nurse and staff ward assignments'}
                     </p>
                 </div>
-                {user?.role === 'admin' && (
+                {(user?.role === 'admin' || user?.role === 'cmo') && (
                     <button
                         onClick={() => setIsModalOpen(true)}
                         className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200"
@@ -140,7 +140,7 @@ const StaffAssignments = () => {
                                     <th className="py-3 px-6">Ward</th>
                                     <th className="py-3 px-6">Shift Start</th>
                                     <th className="py-3 px-6">Shift End</th>
-                                    {user?.role === 'admin' && <th className="py-3 px-6 text-right">Actions</th>}
+                                    {(user?.role === 'admin' || user?.role === 'cmo') && <th className="py-3 px-6 text-right">Actions</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -170,7 +170,7 @@ const StaffAssignments = () => {
                                                 {new Date(assignment.shift_end).toLocaleString('en-US')}
                                             </span>
                                         </td>
-                                        {user?.role === 'admin' && (
+                                        {(user?.role === 'admin' || user?.role === 'cmo') && (
                                             <td className="py-4 px-6 text-right">
                                                 <button
                                                     onClick={() => handleDelete(assignment.id)}
@@ -189,8 +189,8 @@ const StaffAssignments = () => {
                 </div>
             )}
 
-            {/* Modal: Assign Staff - Admin only */}
-            {isModalOpen && user?.role === 'admin' && (
+            {/* Modal: Assign Staff - Admin and CMO only */}
+            {isModalOpen && (user?.role === 'admin' || user?.role === 'cmo') && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">

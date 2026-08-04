@@ -140,7 +140,7 @@ const DoctorAssignments = () => {
                             <div className="border-t border-slate-100 pt-4">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Doctors</span>
-                                    {(user?.role === 'admin' || user?.role === 'staff') && (
+                                    {(user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'nurse') && (
                                         <button
                                             onClick={() => handleOpenModal(admission)}
                                             className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-bold transition-all duration-200"
@@ -178,7 +178,7 @@ const DoctorAssignments = () => {
                                                                 Active
                                                             </span>
                                                         )}
-                                                        {(user?.role === 'admin' || user?.role === 'staff') && !da.unassigned_at && (
+                                                        {(user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'nurse') && !da.unassigned_at && (
                                                             <button
                                                                 onClick={() => handleUnassign(da.id)}
                                                                 className="text-xs text-red-500 hover:text-red-700 font-bold transition-all duration-200"

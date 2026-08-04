@@ -12,7 +12,7 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
-    role = Column(String(20), nullable=False) # 'admin', 'doctor', 'staff'
+    role = Column(String(20), nullable=False)
     first_name = Column(String(50), nullable=False)
     last_name = Column(String(50), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
@@ -22,6 +22,7 @@ class User(Base):
     # Relationships
     doctor_assignments = relationship("DoctorAssignment", back_populates="doctor")
     staff_assignments = relationship("StaffAssignment", back_populates="staff")
+    prescriptions = relationship("Prescription", back_populates="prescribed_by_user")
 
 
 class Patient(Base):
@@ -31,7 +32,7 @@ class Patient(Base):
     first_name = Column(String(50), nullable=False, index=True)
     last_name = Column(String(50), nullable=False, index=True)
     date_of_birth = Column(Date, nullable=False)
-    gender = Column(String(10), nullable=False) # 'male', 'female', 'other'
+    gender = Column(String(10), nullable=False)
     phone_number = Column(String(15), nullable=False, index=True)
     email = Column(String(100), nullable=True)
     address = Column(Text, nullable=False)
@@ -44,6 +45,7 @@ class Patient(Base):
 
     # Relationships
     admissions = relationship("Admission", back_populates="patient")
+    prescriptions = relationship("Prescription", back_populates="patient")
 
 
 class Ward(Base):
@@ -51,7 +53,7 @@ class Ward(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(50), unique=True, nullable=False)
-    type = Column(String(30), nullable=False) # e.g. 'ICU', 'General', 'Pediatrics'
+    type = Column(String(30), nullable=False)
     capacity = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -66,7 +68,7 @@ class Room(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ward_id = Column(UUID(as_uuid=True), ForeignKey("wards.id", ondelete="CASCADE"), nullable=False)
     room_number = Column(String(10), nullable=False)
-    room_type = Column(String(30), nullable=False) # e.g. 'Private', 'Semi-Private'
+    room_type = Column(String(30), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -80,7 +82,7 @@ class Bed(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     room_id = Column(UUID(as_uuid=True), ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
     bed_number = Column(String(10), nullable=False)
-    status = Column(String(20), nullable=False, default="available") # 'available', 'occupied', 'maintenance'
+    status = Column(String(20), nullable=False, default="available")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -97,7 +99,7 @@ class Admission(Base):
     admission_date = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     discharge_date = Column(DateTime(timezone=True), nullable=True)
     reason_for_admission = Column(Text, nullable=False)
-    status = Column(String(20), nullable=False, default="admitted") # 'admitted', 'discharged'
+    status = Column(String(20), nullable=False, default="admitted")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -105,6 +107,7 @@ class Admission(Base):
     patient = relationship("Patient", back_populates="admissions")
     bed = relationship("Bed", back_populates="admissions")
     doctor_assignments = relationship("DoctorAssignment", back_populates="admission", cascade="all, delete-orphan")
+    prescriptions = relationship("Prescription", back_populates="admission")
 
 
 class DoctorAssignment(Base):
@@ -148,3 +151,24 @@ class AuditLog(Base):
     old_values = Column(JSONB, nullable=True)
     new_values = Column(JSONB, nullable=True)
     timestamp = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class Prescription(Base):
+    __tablename__ = "prescriptions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    admission_id = Column(UUID(as_uuid=True), ForeignKey("admissions.id", ondelete="CASCADE"), nullable=False)
+    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
+    prescribed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    medicine_name = Column(String(255), nullable=False)
+    dosage = Column(String(100), nullable=False)
+    frequency = Column(String(100), nullable=False)
+    duration = Column(String(100), nullable=False)
+    instructions = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    prescribed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    admission = relationship("Admission", back_populates="prescriptions")
+    patient = relationship("Patient", back_populates="prescriptions")
+    prescribed_by_user = relationship("User", back_populates="prescriptions")

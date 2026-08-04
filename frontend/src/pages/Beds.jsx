@@ -373,7 +373,7 @@ const Beds = () => {
 
                       <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                         {bed.status === 'available' ? (
-                          (user?.role === 'admin' || user?.role === 'staff') ? (
+                          (user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'doctor' || user?.role === 'nurse') ? (
                             <button
                               onClick={() => handleOpenAdmitModal(bed)}
                               className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all duration-200"
@@ -385,7 +385,7 @@ const Beds = () => {
                             <span className="text-[10px] text-slate-400 italic font-medium">No permissions</span>
                           )
                         ) : bed.status === 'occupied' ? (
-                          (user?.role === 'admin' || user?.role === 'staff') ? (
+                          (user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'doctor' || user?.role === 'nurse') ? (
                             <button
                               onClick={() => handleOpenDischargeModal(bed)}
                               className="text-xs text-red-600 hover:text-red-800 font-bold cursor-pointer active:scale-95 transition-all duration-200"
@@ -395,8 +395,8 @@ const Beds = () => {
                           ) : (
                             <span className="text-[10px] text-slate-400 italic font-medium">Patient Check-in</span>
                           )
-                        ) : (
-                          (user?.role === 'admin' || user?.role === 'staff') && (
+                        ) :
+                          (user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'nurse') && (
                             <button
                               onClick={() => handleSetAvailable(bed)}
                               className="text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer active:scale-95 transition-all duration-200"
@@ -404,7 +404,7 @@ const Beds = () => {
                               Set Available
                             </button>
                           )
-                        )}
+                        }
                       </div>
                     </div>
                   );

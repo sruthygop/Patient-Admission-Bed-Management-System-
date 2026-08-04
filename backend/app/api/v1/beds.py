@@ -34,6 +34,7 @@ def add_ward(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Only admin can create wards
     check_role(current_user, ["admin"])
     return create_ward(db, ward_data, current_user.id)
 
@@ -45,7 +46,8 @@ def list_wards(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "doctor", "staff"])
+    # All roles can view wards
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
     return get_wards(db, skip, limit)
 
 
@@ -54,7 +56,8 @@ def ward_occupancy(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "doctor", "staff"])
+    # All roles can view occupancy
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
     return get_ward_occupancy(db)
 
 
@@ -65,6 +68,7 @@ def add_room(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Only admin can create rooms
     check_role(current_user, ["admin"])
     ward = get_ward(db, room_data.ward_id)
     if not ward:
@@ -81,7 +85,8 @@ def list_rooms(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "doctor", "staff"])
+    # All roles can view rooms
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
     return get_rooms_by_ward(db, ward_id)
 
 
@@ -92,6 +97,7 @@ def add_bed(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Only admin can create beds
     check_role(current_user, ["admin"])
     return create_bed(db, bed_data, current_user.id)
 
@@ -101,12 +107,12 @@ def list_beds(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "doctor", "staff"])
+    # All roles can view beds
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
     from app.models.models import Bed
     return db.query(Bed).all()
 
 
-# @router.put("/beds/{bed_id}/status", response_model=BedResponse)
 @router.put("/{bed_id}/status", response_model=BedResponse)
 def change_bed_status(
     bed_id: UUID,
@@ -114,7 +120,8 @@ def change_bed_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "staff"])
+    # Admin, CMO and Nurse can update bed status
+    check_role(current_user, ["admin", "cmo", "nurse"])
     bed = update_bed_status(db, bed_id, status_data, current_user.id)
     if not bed:
         raise HTTPException(

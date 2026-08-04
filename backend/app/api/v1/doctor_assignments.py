@@ -1,7 +1,7 @@
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
 from app.models.models import User, DoctorAssignment, Admission
@@ -16,14 +16,14 @@ def check_role(current_user: User, allowed_roles: list):
             detail=f"Action forbidden. Required roles: {', '.join(allowed_roles)}"
         )
 
-# Get all doctor assignments for a specific admission
 @router.get("/{admission_id}")
 def get_doctor_assignments(
     admission_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "doctor", "staff"])
+    # All roles can view doctor assignments
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
     
     admission = db.query(Admission).filter(Admission.id == admission_id).first()
     if not admission:
@@ -52,7 +52,6 @@ def get_doctor_assignments(
     return result
 
 
-# Assign a new doctor to an admission
 @router.post("/")
 def assign_doctor(
     admission_id: UUID,
@@ -61,17 +60,17 @@ def assign_doctor(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "staff"])
-    
-    # Check admission exists
+    # Admin, CMO and Nurse can assign doctors
+    # Receptionist cannot assign doctors
+    check_role(current_user, ["admin", "cmo", "nurse"])
+
     admission = db.query(Admission).filter(Admission.id == admission_id).first()
     if not admission:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Admission not found"
         )
-    
-    # Check doctor exists and has doctor role
+
     doctor = db.query(User).filter(
         User.id == doctor_id,
         User.role == "doctor"
@@ -81,8 +80,7 @@ def assign_doctor(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Doctor not found"
         )
-    
-    # Create new assignment
+
     assignment = DoctorAssignment(
         admission_id=admission_id,
         doctor_id=doctor_id,
@@ -91,14 +89,14 @@ def assign_doctor(
     db.add(assignment)
     db.commit()
     db.refresh(assignment)
-    
-    log_audit(db, current_user.id, "DOCTOR_ASSIGNED", "doctor_assignments", 
+
+    log_audit(db, current_user.id, "DOCTOR_ASSIGNED", "doctor_assignments",
               assignment.id, None, {
                   "admission_id": str(admission_id),
                   "doctor_id": str(doctor_id)
               })
     db.commit()
-    
+
     return {
         "id": str(assignment.id),
         "admission_id": str(assignment.admission_id),
@@ -109,15 +107,15 @@ def assign_doctor(
     }
 
 
-# Unassign a doctor from an admission
 @router.delete("/{assignment_id}")
 def unassign_doctor(
     assignment_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "staff"])
-    
+    # Admin, CMO and Nurse can unassign doctors
+    check_role(current_user, ["admin", "cmo", "nurse"])
+
     assignment = db.query(DoctorAssignment).filter(
         DoctorAssignment.id == assignment_id
     ).first()
@@ -126,31 +124,30 @@ def unassign_doctor(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Assignment not found"
         )
-    
-    # Soft unassign — set unassigned_at timestamp
+
     assignment.unassigned_at = datetime.now(timezone.utc)
     db.commit()
-    
+
     log_audit(db, current_user.id, "DOCTOR_UNASSIGNED", "doctor_assignments",
               assignment.id, {"unassigned_at": None},
               {"unassigned_at": assignment.unassigned_at.isoformat()})
     db.commit()
-    
+
     return {"message": "Doctor unassigned successfully"}
 
 
-# Get all doctors list (for dropdown in UI)
 @router.get("/doctors/list")
 def get_doctors_list(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "staff", "doctor"])
+    # All roles can view doctors list
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
     doctors = db.query(User).filter(
         User.role == "doctor",
         User.is_active == True
     ).all()
-    
+
     return [
         {
             "id": str(d.id),

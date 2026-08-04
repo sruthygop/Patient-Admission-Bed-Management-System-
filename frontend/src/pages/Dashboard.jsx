@@ -255,12 +255,12 @@ const Dashboard = () => {
                         ● Active
                       </span>
                     ) : (
-                      <div>
-                        <span className="px-2.5 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full text-[10px] font-bold uppercase">
+                      <div className="min-w-[120px]">
+                        <span className="px-2.5 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full text-[10px] font-bold uppercase whitespace-nowrap">
                           ● Discharged
                         </span>
                         {admission.discharge_date && (
-                          <p className="text-[10px] text-slate-400 mt-1">
+                          <p className="text-[10px] text-slate-400 mt-1 whitespace-nowrap">
                             {new Date(admission.discharge_date).toLocaleDateString('en-US', {
                               month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                             })}

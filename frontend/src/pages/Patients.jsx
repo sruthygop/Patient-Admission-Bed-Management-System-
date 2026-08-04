@@ -178,7 +178,7 @@ const Patients = () => {
           </div>
         </div>
 
-        {(user?.role === 'admin' || user?.role === 'staff') && (
+        {(user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'nurse' || user?.role === 'receptionist') && (
           <button
             onClick={() => handleOpenModal()}
             className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md cursor-pointer active:scale-95 self-start transition-all duration-200"
@@ -250,7 +250,7 @@ const Patients = () => {
                     </td>
                     <td className="py-4 px-6 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {(user?.role === 'admin' || user?.role === 'staff') && (
+                        {(user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'nurse' || user?.role === 'receptionist') && (
                           <button
                             onClick={() => handleOpenModal(patient)}
                             className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all duration-200"

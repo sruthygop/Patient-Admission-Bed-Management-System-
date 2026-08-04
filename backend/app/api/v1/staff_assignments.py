@@ -23,15 +23,15 @@ class StaffAssignmentCreate(BaseModel):
     shift_start: datetime
     shift_end: datetime
 
-# Get all staff assignments
 @router.get("/")
 def get_staff_assignments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin", "staff", "doctor"])
+    # All roles can view staff assignments
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
     assignments = db.query(StaffAssignment).all()
-    
+
     result = []
     for a in assignments:
         staff = db.query(User).filter(User.id == a.staff_id).first()
@@ -50,35 +50,33 @@ def get_staff_assignments(
     return result
 
 
-# Assign staff to a ward
 @router.post("/", status_code=201)
 def assign_staff(
     assignment_data: StaffAssignmentCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin"])
-    
-    # Check ward exists
+    # Only admin and CMO can assign staff to wards
+    check_role(current_user, ["admin", "cmo"])
+
     ward = db.query(Ward).filter(Ward.id == assignment_data.ward_id).first()
     if not ward:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Ward not found"
         )
-    
-    # Check staff exists
+
+    # Check staff exists — now includes nurse and receptionist roles
     staff = db.query(User).filter(
         User.id == assignment_data.staff_id,
-        User.role == "staff"
+        User.role.in_(["nurse", "receptionist", "staff"])
     ).first()
     if not staff:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Staff member not found"
         )
-    
-    # Create assignment
+
     assignment = StaffAssignment(
         ward_id=assignment_data.ward_id,
         staff_id=assignment_data.staff_id,
@@ -88,7 +86,7 @@ def assign_staff(
     db.add(assignment)
     db.commit()
     db.refresh(assignment)
-    
+
     log_audit(db, current_user.id, "STAFF_ASSIGNED", "staff_assignments",
               assignment.id, None, {
                   "ward_id": str(assignment_data.ward_id),
@@ -97,7 +95,7 @@ def assign_staff(
                   "shift_end": assignment_data.shift_end.isoformat()
               })
     db.commit()
-    
+
     return {
         "id": str(assignment.id),
         "ward_id": str(assignment.ward_id),
@@ -110,15 +108,15 @@ def assign_staff(
     }
 
 
-# Delete staff assignment
 @router.delete("/{assignment_id}")
 def remove_staff_assignment(
     assignment_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    check_role(current_user, ["admin"])
-    
+    # Only admin and CMO can remove staff assignments
+    check_role(current_user, ["admin", "cmo"])
+
     assignment = db.query(StaffAssignment).filter(
         StaffAssignment.id == assignment_id
     ).first()
@@ -127,18 +125,18 @@ def remove_staff_assignment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Staff assignment not found"
         )
-    
+
     assignment_id_str = str(assignment.id)
     ward_id_str = str(assignment.ward_id)
     staff_id_str = str(assignment.staff_id)
-    
+
     db.delete(assignment)
     db.commit()
-    
+
     log_audit(db, current_user.id, "STAFF_REMOVED", "staff_assignments",
               assignment.id,
               {"ward_id": ward_id_str, "staff_id": staff_id_str},
               None)
     db.commit()
-    
+
     return {"message": "Staff assignment removed successfully"}

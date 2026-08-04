@@ -10,7 +10,6 @@ from app.crud.dashboard import get_dashboard_stats
 
 router = APIRouter()
 
-# Helper dependency to enforce Role-Based Access Control (RBAC)
 def require_roles(allowed_roles: List[str]):
     def role_checker(current_user: User = Depends(get_current_user)):
         if current_user.role not in allowed_roles:
@@ -24,11 +23,10 @@ def require_roles(allowed_roles: List[str]):
 @router.get("/stats", response_model=DashboardStatsResponse)
 def get_dashboard_statistics(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["admin", "doctor", "staff"]))
+    current_user: User = Depends(require_roles(["admin", "doctor", "cmo", "nurse", "receptionist"]))
 ):
     """
-    Fetch comprehensive dashboard metrics including total statistics,
-    occupancy by ward, 7-day admission/discharge trends, and recent admissions.
-    Accessible by Admin, Doctor, and Staff roles.
+    Fetch comprehensive dashboard metrics.
+    Accessible by all roles.
     """
     return get_dashboard_stats(db)

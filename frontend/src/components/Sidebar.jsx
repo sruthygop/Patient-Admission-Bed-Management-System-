@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, BedDouble, LogOut, ShieldAlert, ClipboardList, UserCog, Stethoscope, ChevronDown, Settings, X, Eye, EyeOff } from 'lucide-react';
+import { LayoutDashboard, Users, BedDouble, LogOut, ShieldAlert, ClipboardList, UserCog, Stethoscope, ChevronDown, Settings, X, Eye, EyeOff, BarChart2, Pill } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
@@ -29,11 +29,13 @@ const Sidebar = () => {
   const [resetError, setResetError] = useState('');
 
   const links = [
-    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'doctor', 'staff'] },
-    { to: '/patients', label: 'Patients', icon: Users, roles: ['admin', 'doctor', 'staff'] },
-    { to: '/beds', label: 'Bed & Admissions', icon: BedDouble, roles: ['admin', 'doctor', 'staff'] },
-    { to: '/doctor-assignments', label: 'Doctor Assignments', icon: Stethoscope, roles: ['admin', 'doctor', 'staff'] },
-    { to: '/staff-assignments', label: 'Staff Assignments', icon: UserCog, roles: ['admin', 'staff', 'doctor'] },
+    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
+    { to: '/patients', label: 'Patients', icon: Users, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
+    { to: '/beds', label: 'Bed & Admissions', icon: BedDouble, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
+    { to: '/doctor-assignments', label: 'Doctor Assignments', icon: Stethoscope, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
+    { to: '/staff-assignments', label: 'Staff Assignments', icon: UserCog, roles: ['admin', 'cmo', 'doctor', 'nurse', 'receptionist'] },
+    { to: '/prescriptions', label: 'Prescriptions', icon: Pill, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
+    { to: '/analytics', label: 'Analytics', icon: BarChart2, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
     { to: '/audit-logs', label: 'Audit Logs', icon: ClipboardList, roles: ['admin'] },
   ];
 

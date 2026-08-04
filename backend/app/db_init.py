@@ -115,7 +115,7 @@ def seed_database(db: Session):
             username="staff_reception",
             email="reception@pabms.com",
             password_hash=get_password_hash("StaffPass123!"),
-            role="staff",
+            role="receptionist",
             first_name="Jane",
             last_name="Doe",
             is_active=True
@@ -130,7 +130,7 @@ def seed_database(db: Session):
             username="nurse_mary",
             email="mary@pabms.com",
             password_hash=get_password_hash("NursePass123!"),
-            role="staff",
+            role="nurse",
             first_name="Mary",
             last_name="Johnson",
             is_active=True
@@ -144,7 +144,7 @@ def seed_database(db: Session):
             username="nurse_john",
             email="john.nurse@pabms.com",
             password_hash=get_password_hash("NursePass123!"),
-            role="staff",
+            role="nurse",
             first_name="John",
             last_name="Williams",
             is_active=True
@@ -158,13 +158,28 @@ def seed_database(db: Session):
             username="nurse_priya",
             email="priya@pabms.com",
             password_hash=get_password_hash("NursePass123!"),
-            role="staff",
+            role="nurse",
             first_name="Priya",
             last_name="Nair",
             is_active=True
         )
         db.add(nurse3)
         print("Created nurse: Priya Nair (nurse_priya / NursePass123!)")
+
+    # Create CMO
+    cmo1 = db.query(User).filter(User.username == "cmo_john").first()
+    if not cmo1:
+        cmo1 = User(
+            username="cmo_john",
+            email="cmo@pabms.com",
+            password_hash=get_password_hash("CMOPass123!"),
+            role="cmo",
+            first_name="Robert",
+            last_name="Wilson",
+            is_active=True
+        )
+        db.add(cmo1)
+        print("Created CMO user: Robert Wilson (cmo_john / CMOPass123!)")    
 
     # Save users so they can be referenced
     db.commit()

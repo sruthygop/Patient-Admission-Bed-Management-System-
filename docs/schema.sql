@@ -1,17 +1,13 @@
 -- Enable UUID extension if not enabled
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create Enum types if they do not exist
--- Note: In PostgreSQL, we can use VARCHAR with CHECK constraints or ENUM types.
--- VARCHAR with CHECK constraints is often easier to modify and handle in SQLAlchemy, but we will write clear DDLs.
-
--- Users Table (Admin, Doctors, Staff)
+-- Users Table (Admin, Doctors, Staff, Nurses, Receptionists, CMO)
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'doctor', 'staff')),
+    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'doctor', 'nurse', 'receptionist', 'cmo')),
     first_name VARCHAR(50) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -32,6 +28,7 @@ CREATE TABLE patients (
     emergency_contact_name VARCHAR(100) NOT NULL,
     emergency_contact_phone VARCHAR(15) NOT NULL,
     blood_group VARCHAR(5) NULL CHECK (blood_group IN ('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-')),
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -40,7 +37,7 @@ CREATE TABLE patients (
 CREATE TABLE wards (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(50) UNIQUE NOT NULL,
-    type VARCHAR(30) NOT NULL, -- e.g., 'ICU', 'General', 'Pediatrics', 'Maternity'
+    type VARCHAR(30) NOT NULL,
     capacity INTEGER NOT NULL CHECK (capacity > 0),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -50,7 +47,7 @@ CREATE TABLE rooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     ward_id UUID NOT NULL REFERENCES wards(id) ON DELETE CASCADE,
     room_number VARCHAR(10) NOT NULL,
-    room_type VARCHAR(30) NOT NULL, -- e.g., 'Private', 'Semi-Private', 'General'
+    room_type VARCHAR(30) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (ward_id, room_number)
 );
@@ -69,7 +66,7 @@ CREATE TABLE beds (
 CREATE TABLE admissions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    bed_id UUID REFERENCES beds(id) ON DELETE SET NULL, -- Can be NULL after discharge or if bed is unallocated
+    bed_id UUID REFERENCES beds(id) ON DELETE SET NULL,
     admission_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     discharge_date TIMESTAMP WITH TIME ZONE NULL,
     reason_for_admission TEXT NOT NULL,
@@ -88,7 +85,7 @@ CREATE TABLE doctor_assignments (
     notes TEXT NULL
 );
 
--- Staff Assignments (to Wards for specific shifts)
+-- Staff Assignments Table
 CREATE TABLE staff_assignments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     ward_id UUID NOT NULL REFERENCES wards(id) ON DELETE CASCADE,
@@ -102,12 +99,27 @@ CREATE TABLE staff_assignments (
 CREATE TABLE audit_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    action VARCHAR(50) NOT NULL, -- e.g., 'PATIENT_REGISTERED', 'PATIENT_ADMITTED', 'BED_UPDATED'
-    entity_name VARCHAR(50) NOT NULL, -- e.g., 'patients', 'admissions', 'beds'
+    action VARCHAR(50) NOT NULL,
+    entity_name VARCHAR(50) NOT NULL,
     entity_id UUID NOT NULL,
     old_values JSONB NULL,
     new_values JSONB NULL,
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Prescriptions Table
+CREATE TABLE prescriptions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    admission_id UUID NOT NULL REFERENCES admissions(id) ON DELETE CASCADE,
+    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    prescribed_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    medicine_name VARCHAR(255) NOT NULL,
+    dosage VARCHAR(100) NOT NULL,
+    frequency VARCHAR(100) NOT NULL,
+    duration VARCHAR(100) NOT NULL,
+    instructions TEXT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    prescribed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Indices for performance
@@ -119,3 +131,5 @@ CREATE INDEX idx_admissions_patient ON admissions (patient_id);
 CREATE INDEX idx_doctor_assignments_admission ON doctor_assignments (admission_id);
 CREATE INDEX idx_staff_assignments_ward ON staff_assignments (ward_id);
 CREATE INDEX idx_audit_logs_timestamp ON audit_logs (timestamp DESC);
+CREATE INDEX idx_prescriptions_admission ON prescriptions (admission_id);
+CREATE INDEX idx_prescriptions_patient ON prescriptions (patient_id);

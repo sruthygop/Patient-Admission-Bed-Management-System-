@@ -10,6 +10,8 @@ import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import DoctorAssignments from './pages/DoctorAssignments';
 import Profile from './pages/Profile';
+import Analytics from './pages/Analytics';
+import Prescriptions from './pages/Prescriptions';
 
 function ProtectedLayout({ children }) {
   const { user, loading } = useAuth();
@@ -112,6 +114,22 @@ function AppRoutes() {
         element={
           <ProtectedLayout>
             <Profile />
+          </ProtectedLayout>
+        }
+      />
+      <Route
+        path="/analytics"
+        element={
+          <ProtectedLayout>
+            <Analytics />
+          </ProtectedLayout>
+        }
+      />
+      <Route
+        path="/prescriptions"
+        element={
+          <ProtectedLayout>
+            <Prescriptions />
           </ProtectedLayout>
         }
       />

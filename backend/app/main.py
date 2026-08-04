@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.v1 import auth, patients, beds, admissions, dashboard, audit_logs, doctor_assignments, staff_assignments, doctor_assignments
+from app.api.v1 import auth, patients, beds, admissions, dashboard, audit_logs, doctor_assignments, staff_assignments, analytics, prescriptions
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Backend services for Patient Admission & Bed Management System",
@@ -10,7 +11,6 @@ app = FastAPI(
 )
 
 # CORS configurations
-# For production, replace wildcard with specific origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,6 +27,9 @@ app.include_router(dashboard.router, prefix=f"{settings.API_V1_STR}/dashboard", 
 app.include_router(audit_logs.router, prefix=f"{settings.API_V1_STR}/audit-logs", tags=["Audit Logs"])
 app.include_router(doctor_assignments.router, prefix=f"{settings.API_V1_STR}/doctor-assignments", tags=["Doctor Assignments"])
 app.include_router(staff_assignments.router, prefix=f"{settings.API_V1_STR}/staff-assignments", tags=["Staff Assignments"])
+app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["Analytics"])
+app.include_router(prescriptions.router, prefix=f"{settings.API_V1_STR}/prescriptions", tags=["Prescriptions"])
+
 @app.get("/", tags=["Status"])
 def root():
     return {
@@ -39,5 +42,5 @@ def root():
 def health_check():
     return {
         "status": "healthy",
-        "database": "connected" # We can add detailed checks later
+        "database": "connected"
     }

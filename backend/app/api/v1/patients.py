@@ -11,7 +11,6 @@ from app.crud import patient as patient_crud
 
 router = APIRouter()
 
-# Helper dependency to enforce Role-Based Access Control (RBAC)
 def require_roles(allowed_roles: List[str]):
     def role_checker(current_user: User = Depends(get_current_user)):
         if current_user.role not in allowed_roles:
@@ -26,14 +25,12 @@ def require_roles(allowed_roles: List[str]):
 def register_patient(
     patient_in: PatientCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["admin", "staff"]))
+    current_user: User = Depends(require_roles(["admin", "cmo", "nurse", "receptionist"]))
 ):
     """
-    Register a new patient (demographics, contact, and emergency details).
-    Accessible by Admin and Staff roles. Writes a PATIENT_REGISTERED audit log.
+    Register a new patient.
+    Accessible by Admin, CMO, Nurse and Receptionist roles.
     """
-    # Check if a patient with the same phone number already exists
-    # (Optional safety check; let's allow registering unless explicitly requested not to, but listing first is good)
     return patient_crud.create_patient(db=db, patient_in=patient_in, current_user_id=current_user.id)
 
 @router.get("/", response_model=List[PatientResponse])
@@ -43,11 +40,11 @@ def read_patients(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["admin", "doctor", "staff"]))
+    current_user: User = Depends(require_roles(["admin", "doctor", "cmo", "nurse", "receptionist"]))
 ):
     """
-    Search and filter patients by name, phone, or ID, with pagination.
-    Accessible by Admin, Doctor, and Staff roles.
+    Search and filter patients.
+    Accessible by Admin, Doctor, CMO, Nurse and Receptionist roles.
     """
     return patient_crud.get_patients(db=db, search=search, phone=phone, skip=skip, limit=limit)
 
@@ -55,11 +52,11 @@ def read_patients(
 def read_patient_by_id(
     patient_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["admin", "doctor", "staff"]))
+    current_user: User = Depends(require_roles(["admin", "doctor", "cmo", "nurse", "receptionist"]))
 ):
     """
     Get details of a single patient by ID.
-    Accessible by Admin, Doctor, and Staff roles.
+    Accessible by Admin, Doctor, CMO, Nurse and Receptionist roles.
     """
     db_patient = patient_crud.get_patient(db=db, patient_id=patient_id)
     if not db_patient:
@@ -74,11 +71,11 @@ def update_patient_details(
     patient_id: UUID,
     patient_in: PatientUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["admin", "staff"]))
+    current_user: User = Depends(require_roles(["admin", "cmo", "nurse", "receptionist"]))
 ):
     """
     Update details of an existing patient.
-    Accessible by Admin and Staff roles. Writes a PATIENT_UPDATED audit log.
+    Accessible by Admin, CMO, Nurse and Receptionist roles.
     """
     db_patient = patient_crud.get_patient(db=db, patient_id=patient_id)
     if not db_patient:
@@ -100,8 +97,8 @@ def remove_patient(
     current_user: User = Depends(require_roles(["admin"]))
 ):
     """
-    Perform a soft delete on a patient.
-    Restricted to Admin role only. Writes a PATIENT_DELETED audit log.
+    Soft delete a patient.
+    Restricted to Admin role only.
     """
     db_patient = patient_crud.get_patient(db=db, patient_id=patient_id)
     if not db_patient:
