@@ -37,6 +37,7 @@ const Sidebar = () => {
     { to: '/prescriptions', label: 'Prescriptions', icon: Pill, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
     { to: '/analytics', label: 'Analytics', icon: BarChart2, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
     { to: '/audit-logs', label: 'Audit Logs', icon: ClipboardList, roles: ['admin'] },
+    { to: '/user-management', label: 'User Management', icon: UserCog, roles: ['admin'] },
   ];
 
   const visibleLinks = links.filter((link) => link.roles.includes(user?.role));

@@ -12,6 +12,7 @@ import DoctorAssignments from './pages/DoctorAssignments';
 import Profile from './pages/Profile';
 import Analytics from './pages/Analytics';
 import Prescriptions from './pages/Prescriptions';
+import UserManagement from './pages/UserManagement';
 
 function ProtectedLayout({ children }) {
   const { user, loading } = useAuth();
@@ -130,6 +131,14 @@ function AppRoutes() {
         element={
           <ProtectedLayout>
             <Prescriptions />
+          </ProtectedLayout>
+        }
+      />
+      <Route
+        path="/user-management"
+        element={
+          <ProtectedLayout>
+            <UserManagement />
           </ProtectedLayout>
         }
       />
