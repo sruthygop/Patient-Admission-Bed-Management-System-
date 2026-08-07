@@ -161,7 +161,7 @@ def list_doctors(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    doctors = db.query(User).filter(User.role == "doctor").all()
+    doctors = db.query(User).filter(User.role == "doctor", User.is_active == True).all()
     return [
         {
             "id": str(doc.id),

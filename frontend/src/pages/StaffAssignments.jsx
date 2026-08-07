@@ -33,7 +33,7 @@ const StaffAssignments = () => {
             // Admin and CMO can fetch users list
             if (user?.role === 'admin' || user?.role === 'cmo') {
                 const usersRes = await api.get('/api/v1/auth/users');
-                setStaff(usersRes.data.filter(u => ['nurse', 'receptionist', 'staff'].includes(u.role)));
+                setStaff(usersRes.data.filter(u => ['nurse', 'receptionist', 'staff'].includes(u.role) && u.is_active === true));
             }
         } catch (err) {
             console.error('Failed to load staff assignments:', err);

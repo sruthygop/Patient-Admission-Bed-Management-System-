@@ -68,8 +68,9 @@ def assign_staff(
 
     # Check staff exists — now includes nurse and receptionist roles
     staff = db.query(User).filter(
-        User.id == assignment_data.staff_id,
-        User.role.in_(["nurse", "receptionist", "staff"])
+    User.id == assignment_data.staff_id,
+    User.role.in_(["nurse", "receptionist", "staff"]),
+    User.is_active == True
     ).first()
     if not staff:
         raise HTTPException(
