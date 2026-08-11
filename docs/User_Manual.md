@@ -28,13 +28,15 @@ Your session will automatically expire after 60 minutes of inactivity. You will 
 
 ## 3. User Roles
 
-The system has three roles with different access levels:
+The system has 5 roles with different access levels:
 
 | Role | Description |
 |---|---|
-| Admin | Full access to all features — register, update, delete patients, manage beds, admit/discharge, assign doctors and staff, view audit logs, reset user passwords |
-| Doctor | View-only access to dashboard, patients, beds, admissions, doctor assignments and staff assignments |
-| Staff/Nurse | Can register and update patients, admit and discharge patients, assign and unassign doctors — cannot delete patients or view audit logs |
+| Admin | Full access to all features including user management and audit logs |
+| CMO / Department Head | Can register patients, admit/discharge, bed status upadte assign doctors, schedule staff, write prescriptions |
+| Doctor | Can view patients, admit and discharge patients, write and manage prescriptions |
+| Nurse | Can register patients, admit/discharge patients, assign doctors,update bed status |
+| Receptionist | Can register and view patients only |
 
 ---
 
@@ -46,7 +48,7 @@ The Dashboard gives a real-time overview of the hospital:
 - **Active Admissions** — number of patients currently admitted
 - **Available Beds** — number of beds ready for new patients
 - **Total Patients** — total registered patients in the system
-- **Admission Trends** — line chart showing daily admissions vs discharges for the last 7 days
+- **Admission Trends** — bar chart showing daily admissions vs discharges for the last 7 days
 - **Ward Occupancy** — breakdown of bed usage per ward
 - **Recent Patient Admissions** — latest admitted and discharged patients
 
@@ -67,6 +69,10 @@ The Dashboard gives a real-time overview of the hospital:
    - Residential Address
    - Emergency Contact Name and Phone
 4. Click **Register Patient** to save
+
+### Who can register patients:
+- Admin, CMO, Nurse, Receptionist — ALLOW
+- Doctor — DENY
 
 ### Searching for a Patient
 - Use the **Search** bar to search by first or last name
@@ -101,21 +107,27 @@ The Dashboard gives a real-time overview of the hospital:
 2. Find an **Available** bed
 3. Click **Admit** on the bed card
 4. Select the patient from the dropdown
-5. Select the assigned doctor
-6. Enter the reason for admission
-7. Click **Confirm Admission**
+5. Enter the reason for admission
+6. Click **Confirm Admission**
+7. After admission, go to **Doctor Assignments** page to assign a doctor
+
+### Who can admit patients:
+- Admin, CMO, Doctor, Nurse — ALLOW
+- Receptionist — DENY
 
 ### Discharging a Patient
 1. Find the **Occupied** bed
 2. Click **Discharge** on the bed card
 3. Review the patient and admission details
-4. Select the post-discharge bed status:
+4. Select the post-discharge bed status (Admin, CMO, Nurse only):
    - **Maintenance** (recommended for cleaning)
    - **Available** (immediately ready)
 5. Click **Confirm Discharge**
 
+Note: When a Doctor discharges a patient, bed is automatically set to Maintenance.
+
 ### Setting a Bed to Available
-If a bed is in **Maintenance** and is ready for use:
+If a bed is in **Maintenance** and is ready for use (Admin, CMO, Nurse only):
 1. Find the bed
 2. Click **Set Available**
 
@@ -133,17 +145,21 @@ If a bed is in **Maintenance** and is ready for use:
 1. Click **Doctor Assignments** in the sidebar
 2. All active admissions are listed with their assigned doctors
 
-### Assigning a Doctor
-1. Find the patient admission
+### Assigning a Doctor (After Admission)
+1. Find the newly admitted patient
 2. Click **Add Doctor**
 3. Select the doctor from the dropdown
 4. Add notes (optional)
 5. Click **Assign Doctor**
 
-### Unassigning a Doctor
-1. Find the doctor assignment
-2. Click **Unassign**
-3. Confirm the action
+### Reassigning a Doctor (When doctor is busy or on leave)
+1. Find the current doctor assignment
+2. Click **Unassign** to remove current doctor
+3. Click **Add Doctor** to assign a new doctor
+
+### Who can assign doctors:
+- Admin, CMO, Nurse — ALLOW
+- Doctor, Receptionist — DENY
 
 ---
 
@@ -153,14 +169,14 @@ If a bed is in **Maintenance** and is ready for use:
 1. Click **Staff Assignments** in the sidebar
 2. All current staff ward assignments are listed
 
-### Assigning Staff to a Ward (Admin only)
+### Assigning Staff to a Ward (Admin and CMO only)
 1. Click **Assign Staff** button
 2. Select the ward
 3. Select the staff member
 4. Set the shift start and end time
 5. Click **Assign Staff**
 
-### Removing a Staff Assignment (Admin only)
+### Removing a Staff Assignment (Admin and CMO only)
 1. Find the assignment in the list
 2. Click the **delete (trash) icon**
 3. Confirm the removal
@@ -180,7 +196,79 @@ If a bed is in **Maintenance** and is ready for use:
 
 ---
 
-## 10. Profile Settings
+## 10. Analytics Hub
+
+The Analytics Hub provides detailed clinical and operational insights:
+
+- **Total Patients** — total registered patients in the system
+- **Total Admissions** — all time admission count
+- **Total Discharged** — successfully discharged patients
+- **Average Length of Stay** — average days patients stay
+- **Monthly Admission Trends** — line chart showing admissions vs discharges over last 6 months
+- **Gender Distribution** — pie chart showing patient gender breakdown
+- **Blood Group Distribution** — bar chart showing patient blood group breakdown
+- **Ward Performance** — occupancy rate comparison across all wards
+
+All roles can access the Analytics Hub.
+
+---
+
+## 11. Digital Prescriptions
+
+### Viewing Prescriptions
+1. Click **Prescriptions** in the sidebar
+2. Select a patient from the active patients list on the left
+3. View all prescriptions for that patient on the right
+
+### Writing a Prescription (Doctor and CMO only)
+1. Select the admitted patient from the left panel
+2. Click **Add Prescription** button
+3. Fill in the prescription details:
+   - Medicine Name (e.g. Paracetamol)
+   - Dosage (e.g. 500mg)
+   - Frequency (e.g. Twice daily)
+   - Duration (e.g. 5 days)
+   - Instructions (e.g. Take after food)
+4. Click **Add Prescription** to save
+
+### Deactivating a Prescription (Doctor and CMO only)
+1. Find the prescription in the list
+2. Click **Deactivate** next to the active prescription
+3. Confirm the action — prescription status changes to Inactive
+
+---
+
+## 12. User Management (Admin only)
+
+### Viewing All Users
+1. Click **User Management** in the sidebar
+2. All system users are listed with their role and status
+
+### Adding a New User
+1. Click **Add New User** button
+2. Fill in the user details:
+   - First Name and Last Name
+   - Username (unique)
+   - Email Address (unique)
+   - Password (minimum 8 characters)
+   - Role (Doctor, Nurse, Receptionist, CMO, or Admin)
+3. Click **Create User** — the new user can login immediately
+
+### Editing a User
+1. Find the user in the list
+2. Click the **edit (pencil) icon**
+3. Update First Name, Last Name, or Role
+4. Click **Save Changes**
+
+### Activating or Deactivating a User
+1. Find the user in the list
+2. Click **Deactivate** to disable their account
+3. Click **Activate** to re-enable their account
+4. Deactivated users cannot login and will not appear in any dropdowns
+
+---
+
+## 13. Profile Settings
 
 ### Updating Your Name
 1. Click your name in the sidebar
@@ -205,15 +293,17 @@ If a bed is in **Maintenance** and is ready for use:
 
 ---
 
-## 11. Signing Out
+## 14. Signing Out
 
 Click **Sign Out** at the bottom of the sidebar to securely log out of the system.
 
 ---
 
-## 12. Tips
+## 15. Tips
 
 - Always log out when leaving your workstation
 - Change your password regularly for security
 - Contact your system administrator if you are locked out
-- The dashboard refreshes automatically — use the refresh button for latest data
+- The dashboard auto-refreshes — use the refresh button for latest data
+- Deactivated users cannot login — contact admin to reactivate
+- Doctor assignment should be done immediately after admitting a patient through the Doctor Assignments page

@@ -9,7 +9,7 @@ Handles end-to-end patient lifecycle: registration, admission, bed allocation, d
 
 ### Pages
 
-| Route | Description |
+ || Route | Description |
 |---|---|
 | `/login` | Email-based login for all roles |
 | `/dashboard` | Real-time hospital overview — occupancy, trends, ward breakdown |
@@ -17,6 +17,9 @@ Handles end-to-end patient lifecycle: registration, admission, bed allocation, d
 | `/beds` | Bed and admission control — admit, discharge, manage wards |
 | `/doctor-assignments` | Assign and manage doctors for active admissions |
 | `/staff-assignments` | Assign nurses and staff to wards for shifts |
+| `/prescriptions` | Digital prescriptions for admitted patients |
+| `/analytics` | Clinical and operational analytics hub |
+| `/user-management` | Manage system users (admin only) |
 | `/audit-logs` | Full system activity history (admin only) |
 
 ### API Endpoints
@@ -53,15 +56,18 @@ Handles end-to-end patient lifecycle: registration, admission, bed allocation, d
 
 - **Patient Management** — register, search, update, and soft-delete patient records
 - **Bed Management** — ward, room, and bed hierarchy with real-time status tracking
-- **Admission Lifecycle** — admit patients to beds, assign doctors, discharge with bed status update
-- **Doctor Assignment** — assign and reassign doctors to active admissions
+- **Admission Lifecycle** — admit patients to beds, assign doctors separately, discharge with automatic bed status update
+- **Doctor Assignment** — assign, reassign, and unassign doctors to active admissions separately from admission flow
 - **Staff Scheduling** — assign nurses and staff to wards for shifts
-- **Role-Based Access Control** — admin, doctor, and staff roles with different permissions
+- **Digital Prescriptions** — doctors and CMO can write and manage prescriptions for admitted patients
+- **Analytics Hub** — monthly trends, gender distribution, blood group breakdown, ward performance analysis
+- **Role-Based Access Control** — five roles (Admin, CMO, Doctor, Nurse, Receptionist) with fine-grained permissions per the RBAC matrix
 - **Audit Logging** — every system action is tracked with who performed it and when
 - **Real-Time Dashboard** — occupancy rates, admission trends, ward breakdown, recent admissions
 - **JWT Authentication** — all API routes are protected with JWT tokens
 - **Profile Settings** — users can update their name and change their own password
-- **Admin Tools** — admin can reset any user's password
+- **Admin Tools** — admin can reset any user's password and manage all system users
+- **User Management** — admin can add, edit, activate and deactivate system users through the UI
 
 ---
 
@@ -80,18 +86,19 @@ Handles end-to-end patient lifecycle: registration, admission, bed allocation, d
 ---
 
 ## Role-Based Access Control
-
-| Feature | Admin | Doctor | Staff/Nurse |
-|---|---|---|---|
-| Dashboard | Full access | View only | View only |
-| Patient Management | Full access | View only | Register and update |
-| Bed and Admissions | Full access | View only | Admit and discharge |
-| Doctor Assignments | Full access | View only | Assign and unassign |
-| Staff Assignments | Full access | View only | View only |
-| Ward/Room/Bed Management | Full access | No access | No access |
-| Audit Logs | Full access | No access | No access |
-| Profile Settings | Full access | Own profile | Own profile |
-
+| Feature | Admin | CMO | Doctor | Nurse | Receptionist |
+|---|---|---|---|---|---|
+| Dashboard | Full access | Full access | View only | View only | View only |
+| Patient Management | Full access | Register/update | View only | Register/update | Register only |
+| Bed and Admissions | Full access | Admit/discharge | Admit/discharge | Admit/discharge | View only |
+| Doctor Assignments | Full access | Assign/unassign | View only | Assign/unassign | View only |
+| Staff Assignments | Full access | Manage | View only | View only | View only |
+| Prescriptions | View only | Write/manage | Write/manage | View only | View only |
+| Analytics | Full access | Full access | Full access | Full access | Full access |
+| User Management | Full access | No access | No access | No access | No access |
+| Audit Logs | Full access | No access | No access | No access | No access |
+| Ward/Room/Bed Management | Full access | No access | No access | No access | No access |
+| Profile Settings | Full access | Own profile | Own profile | Own profile | Own profile |
 ---
 
 ## Prerequisites
@@ -194,10 +201,11 @@ Frontend runs at: **http://localhost:5173**
 | System Administrator | admin@pabms.com | Admin |
 | Dr. John Smith | smith@pabms.com | Doctor |
 | Dr. Sarah Jones | jones@pabms.com | Doctor |
-| Jane Doe (Reception) | reception@pabms.com | Staff |
-| Mary Johnson (Nurse) | mary@pabms.com | Staff |
-| John Williams (Nurse) | john.nurse@pabms.com | Staff |
-| Priya Nair (Nurse) | priya@pabms.com | Staff |
+| Robert Wilson (CMO) | cmo@pabms.com | CMO |
+| Jane Doe | reception@pabms.com | Receptionist |
+| Mary Johnson | mary@pabms.com | Nurse |
+| John Williams | john.nurse@pabms.com | Nurse |
+| Priya Nair | priya@pabms.com | Nurse |
 
 > Default credentials are set during database initialization via `db_init.py`. Please change all passwords after first login in a production environment.
 

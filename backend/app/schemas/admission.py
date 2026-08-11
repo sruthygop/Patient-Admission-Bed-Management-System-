@@ -24,8 +24,7 @@ class AdmissionCreate(BaseModel):
     patient_id: UUID
     bed_id: UUID
     reason_for_admission: str
-    primary_doctor_id: UUID
-
+    primary_doctor_id: Optional[UUID] = None
 class DischargeRequest(BaseModel):
     bed_status: str = Field("maintenance", description="Post-discharge bed status. Allowed: 'available', 'maintenance'")
 

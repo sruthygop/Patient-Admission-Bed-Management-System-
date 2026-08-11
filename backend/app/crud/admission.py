@@ -56,26 +56,10 @@ def admit_patient(db: Session, admission_data: AdmissionCreate, user_id: UUID) -
     # 5. Update bed status to occupied
     bed.status = "occupied"
 
-    # 6. Assign primary doctor
-    doctor_assignment = DoctorAssignment(
-        admission_id=admission.id,
-        doctor_id=admission_data.primary_doctor_id,
-        notes="Primary doctor assigned at admission"
-    )
-    db.add(doctor_assignment)
-
     db.commit()
     db.refresh(admission)
 
-    # 7. Write audit log
-    # log_audit(db, user_id, "PATIENT_ADMITTED", "admissions", admission.id, None, {
-    #     "patient_id": str(admission_data.patient_id),
-    #     "bed_id": str(admission_data.bed_id),
-    #     "reason": admission_data.reason_for_admission
-    # })
-
-    # return admission
-
+    # 6. Write audit log
     log_audit(db, user_id, "PATIENT_ADMITTED", "admissions", admission.id, None, {
         "patient_id": str(admission_data.patient_id),
         "bed_id": str(admission_data.bed_id),
@@ -112,12 +96,6 @@ def discharge_patient(db: Session, admission_id: UUID, discharge_data: Discharge
     db.refresh(admission)
 
     # 4. Write audit log
-    # log_audit(db, user_id, "PATIENT_DISCHARGED", "admissions", admission.id,
-    #                 {"status": "admitted"},
-    #                 {"status": "discharged", "bed_status": discharge_data.bed_status})
-
-    # return admission
-
     log_audit(db, user_id, "PATIENT_DISCHARGED", "admissions", admission.id,
                     {"status": "admitted"},
                     {"status": "discharged", "bed_status": discharge_data.bed_status})
@@ -133,8 +111,7 @@ def get_active_admissions(db: Session, skip: int = 0, limit: int = 100):
         joinedload(Admission.doctor_assignments)
     ).filter(
         Admission.status == "admitted"
-    ).offset(skip).limit(limit).all()
-
+    ).order_by(Admission.admission_date.desc()).offset(skip).limit(limit).all()
 
 def get_admission(db: Session, admission_id: UUID) -> Admission:
     return db.query(Admission).options(
