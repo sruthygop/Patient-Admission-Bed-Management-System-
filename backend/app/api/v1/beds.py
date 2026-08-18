@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
-from app.models.models import User
+from app.models.models import User, Bed, Ward, Room
 from app.schemas.bed import (
     WardCreate, WardResponse, WardOccupancyResponse,
     RoomCreate, RoomResponse,
@@ -20,7 +20,9 @@ router = APIRouter()
 
 
 def check_role(current_user: User, allowed_roles: list):
-    if current_user.role not in allowed_roles:
+    # Allow super_admin by default alongside listed roles
+    extended_roles = allowed_roles + ["super_admin"]
+    if current_user.role not in extended_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Action forbidden. Required roles: {', '.join(allowed_roles)}"
@@ -36,7 +38,7 @@ def add_ward(
 ):
     # Only admin can create wards
     check_role(current_user, ["admin"])
-    return create_ward(db, ward_data, current_user.id)
+    return create_ward(db, ward_data, current_user.id, current_user.hospital_id)
 
 
 @router.get("/wards", response_model=list[WardResponse])
@@ -48,7 +50,7 @@ def list_wards(
 ):
     # All roles can view wards
     check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
-    return get_wards(db, skip, limit)
+    return get_wards(db, skip, limit, hospital_id=current_user.hospital_id, user_role=current_user.role)
 
 
 @router.get("/wards/occupancy", response_model=list[WardOccupancyResponse])
@@ -58,7 +60,7 @@ def ward_occupancy(
 ):
     # All roles can view occupancy
     check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
-    return get_ward_occupancy(db)
+    return get_ward_occupancy(db, hospital_id=current_user.hospital_id, user_role=current_user.role)
 
 
 # --- Room Endpoints ---
@@ -76,6 +78,14 @@ def add_room(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Ward not found"
         )
+    
+    # Ensure admin isn't creating rooms in another hospital's ward
+    if current_user.role != "super_admin" and ward.hospital_id != current_user.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot add room to a ward in another hospital"
+        )
+
     return create_room(db, room_data, current_user.id)
 
 
@@ -87,6 +97,20 @@ def list_rooms(
 ):
     # All roles can view rooms
     check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
+    ward = get_ward(db, ward_id)
+    if not ward:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ward not found"
+        )
+
+    # Scoping check
+    if current_user.role != "super_admin" and ward.hospital_id != current_user.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this hospital's ward"
+        )
+
     return get_rooms_by_ward(db, ward_id)
 
 
@@ -109,8 +133,12 @@ def list_beds(
 ):
     # All roles can view beds
     check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
-    from app.models.models import Bed
-    return db.query(Bed).all()
+    
+    query = db.query(Bed).join(Room).join(Ward)
+    if current_user.role != "super_admin":
+        query = query.filter(Ward.hospital_id == current_user.hospital_id)
+        
+    return query.all()
 
 
 @router.put("/{bed_id}/status", response_model=BedResponse)

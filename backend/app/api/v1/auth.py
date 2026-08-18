@@ -1,10 +1,11 @@
 from datetime import timedelta
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 from pydantic import BaseModel
-from typing import Optional
+
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.core.config import settings
@@ -13,6 +14,8 @@ from app.models.models import User
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
+
+# ==================== PYDANTIC SCHEMAS ====================
 
 class ProfileUpdate(BaseModel):
     first_name: str
@@ -40,6 +43,8 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
 
+# ==================== HELPER DEPENDENCY ====================
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
@@ -62,6 +67,7 @@ def get_current_user(
         raise credentials_exception
     return user
 
+# ==================== AUTH ENDPOINTS ====================
 
 @router.post("/login")
 def login(
@@ -93,7 +99,9 @@ def login(
         "token_type": "bearer",
         "role": user.role,
         "username": user.username,
-        "email": user.email
+        "email": user.email,
+        "hospital_id": str(user.hospital_id) if user.hospital_id else None,
+        "hospital_name": user.hospital.name if user.hospital else "Global"
     }
 
 
@@ -108,7 +116,9 @@ def get_current_user_info(
         "role": current_user.role,
         "first_name": current_user.first_name,
         "last_name": current_user.last_name,
-        "is_active": current_user.is_active
+        "is_active": current_user.is_active,
+        "hospital_id": str(current_user.hospital_id) if current_user.hospital_id else None,
+        "hospital_name": current_user.hospital.name if current_user.hospital else "Global"
     }
 
 
@@ -129,7 +139,9 @@ def update_profile(
         "role": current_user.role,
         "first_name": current_user.first_name,
         "last_name": current_user.last_name,
-        "is_active": current_user.is_active
+        "is_active": current_user.is_active,
+        "hospital_id": str(current_user.hospital_id) if current_user.hospital_id else None,
+        "hospital_name": current_user.hospital.name if current_user.hospital else "Global"
     }
 
 
@@ -161,7 +173,14 @@ def list_doctors(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    doctors = db.query(User).filter(User.role == "doctor", User.is_active == True).all()
+    # Filter doctors by active status AND hospital_id
+    query = db.query(User).filter(User.role == "doctor", User.is_active == True)
+    
+    # Non-superadmins only see doctors from their own hospital
+    if current_user.role != "super_admin":
+        query = query.filter(User.hospital_id == current_user.hospital_id)
+        
+    doctors = query.all()
     return [
         {
             "id": str(doc.id),
@@ -178,13 +197,20 @@ def get_all_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Admin and CMO can view all users
-    if current_user.role not in ["admin", "cmo"]:
+    # Admin, CMO, and Super Admin can view users
+    allowed_roles = ["admin", "cmo", "super_admin"]
+    if current_user.role not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only"
         )
-    users = db.query(User).all()
+    
+    # Super Admin sees users across ALL hospitals; Hospital admins only see their hospital
+    if current_user.role == "super_admin":
+        users = db.query(User).all()
+    else:
+        users = db.query(User).filter(User.hospital_id == current_user.hospital_id).all()
+
     return [
         {
             "id": str(u.id),
@@ -193,7 +219,9 @@ def get_all_users(
             "first_name": u.first_name,
             "last_name": u.last_name,
             "role": u.role,
-            "is_active": u.is_active
+            "is_active": u.is_active,
+            "hospital_id": str(u.hospital_id) if u.hospital_id else None,
+            "hospital_name": u.hospital.name if u.hospital else "Global"
         }
         for u in users
     ]
@@ -205,8 +233,8 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Only admin can create new users
-    if current_user.role != "admin":
+    # Only Admin or Super Admin can create new users
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only"
@@ -246,6 +274,7 @@ def create_user(
         role=user_data.role,
         first_name=user_data.first_name,
         last_name=user_data.last_name,
+        hospital_id=current_user.hospital_id,  # Link to creator's hospital
         is_active=True
     )
     db.add(new_user)
@@ -259,6 +288,7 @@ def create_user(
         "role": new_user.role,
         "first_name": new_user.first_name,
         "last_name": new_user.last_name,
+        "hospital_id": str(new_user.hospital_id) if new_user.hospital_id else None,
         "is_active": new_user.is_active,
         "message": f"User {new_user.username} created successfully"
     }
@@ -271,8 +301,8 @@ def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Only admin can update users
-    if current_user.role != "admin":
+    # Only Admin or Super Admin can update users
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only"
@@ -283,6 +313,13 @@ def update_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
+        )
+
+    # Prevent a regular hospital admin from editing users outside their hospital
+    if current_user.role != "super_admin" and user.hospital_id != current_user.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot update users belonging to another hospital"
         )
 
     if user_data.first_name is not None:
@@ -321,7 +358,7 @@ def admin_reset_password(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role not in ["admin", "cmo"]:
+    if current_user.role not in ["admin", "cmo", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only"
@@ -332,6 +369,14 @@ def admin_reset_password(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+        
+    # Prevent a regular hospital admin from resetting passwords outside their hospital
+    if current_user.role != "super_admin" and user.hospital_id != current_user.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot reset password for users in another hospital"
+        )
+
     if len(reset_data.new_password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -21,7 +21,8 @@ router = APIRouter()
 
 
 def check_role(current_user: User, allowed_roles: list):
-    if current_user.role not in allowed_roles:
+    extended_roles = allowed_roles + ["super_admin"]
+    if current_user.role not in extended_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Action forbidden. Required roles: {', '.join(allowed_roles)}"
@@ -34,10 +35,14 @@ def admit(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Admin, CMO, Doctor and Nurse can admit patients
-    # Receptionist cannot admit
+    """Admit a patient attached to the current hospital."""
     check_role(current_user, ["admin", "cmo", "doctor", "nurse"])
-    return admit_patient(db, admission_data, current_user.id)
+    return admit_patient(
+        db=db, 
+        admission_data=admission_data, 
+        user_id=current_user.id,
+        hospital_id=current_user.hospital_id
+    )
 
 
 @router.post("/{admission_id}/discharge", response_model=AdmissionResponse)
@@ -47,10 +52,16 @@ def discharge(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Admin, CMO, Doctor and Nurse can discharge patients
-    # Receptionist cannot discharge
+    """Discharge a patient (scoped to hospital)."""
     check_role(current_user, ["admin", "cmo", "doctor", "nurse"])
-    return discharge_patient(db, admission_id, discharge_data, current_user.id)
+    return discharge_patient(
+        db=db, 
+        admission_id=admission_id, 
+        discharge_data=discharge_data, 
+        user_id=current_user.id,
+        hospital_id=current_user.hospital_id,
+        user_role=current_user.role
+    )
 
 
 @router.get("/active", response_model=list[AdmissionResponse])
@@ -60,9 +71,15 @@ def active_admissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # All roles can view active admissions
+    """Get active admissions scoped to current user's hospital."""
     check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
-    return get_active_admissions(db, skip, limit)
+    return get_active_admissions(
+        db=db, 
+        skip=skip, 
+        limit=limit,
+        hospital_id=current_user.hospital_id,
+        user_role=current_user.role
+    )
 
 
 @router.get("/{admission_id}", response_model=AdmissionResponse)
@@ -71,9 +88,14 @@ def admission_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # All roles can view admission details
+    """Get details of a single admission (scoped to hospital)."""
     check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
-    admission = get_admission(db, admission_id)
+    admission = get_admission(
+        db=db, 
+        admission_id=admission_id,
+        hospital_id=current_user.hospital_id,
+        user_role=current_user.role
+    )
     if not admission:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -88,6 +110,11 @@ def admission_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # All roles can view admission history
+    """Get admission history for a patient (scoped to hospital)."""
     check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
-    return get_admission_history(db, patient_id)
+    return get_admission_history(
+        db=db, 
+        patient_id=patient_id,
+        hospital_id=current_user.hospital_id,
+        user_role=current_user.role
+    )

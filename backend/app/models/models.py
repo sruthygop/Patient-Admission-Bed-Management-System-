@@ -1,14 +1,38 @@
 import uuid
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, DateTime, Date, Text, Table
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, DateTime, Date, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
 
+
+class Hospital(Base):
+    __tablename__ = "hospitals"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    code = Column(String(50), unique=True, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    users = relationship("User", back_populates="hospital")
+    wards = relationship("Ward", back_populates="hospital")
+    patients = relationship("Patient", back_populates="hospital")
+    rooms = relationship("Room", back_populates="hospital")
+    beds = relationship("Bed", back_populates="hospital")
+    admissions = relationship("Admission", back_populates="hospital")
+    prescriptions = relationship("Prescription", back_populates="hospital")
+    audit_logs = relationship("AuditLog", back_populates="hospital")
+    doctor_assignments = relationship("DoctorAssignment", back_populates="hospital")
+    staff_assignments = relationship("StaffAssignment", back_populates="hospital")
+
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
@@ -23,12 +47,14 @@ class User(Base):
     doctor_assignments = relationship("DoctorAssignment", back_populates="doctor")
     staff_assignments = relationship("StaffAssignment", back_populates="staff")
     prescriptions = relationship("Prescription", back_populates="prescribed_by_user")
+    hospital = relationship("Hospital", back_populates="users")
 
 
 class Patient(Base):
     __tablename__ = "patients"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
     first_name = Column(String(50), nullable=False, index=True)
     last_name = Column(String(50), nullable=False, index=True)
     date_of_birth = Column(Date, nullable=False)
@@ -46,13 +72,15 @@ class Patient(Base):
     # Relationships
     admissions = relationship("Admission", back_populates="patient")
     prescriptions = relationship("Prescription", back_populates="patient")
+    hospital = relationship("Hospital", back_populates="patients")
 
 
 class Ward(Base):
     __tablename__ = "wards"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(50), unique=True, nullable=False)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
+    name = Column(String(50), nullable=False)
     type = Column(String(30), nullable=False)
     capacity = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -60,12 +88,14 @@ class Ward(Base):
     # Relationships
     rooms = relationship("Room", back_populates="ward", cascade="all, delete-orphan")
     staff_assignments = relationship("StaffAssignment", back_populates="ward", cascade="all, delete-orphan")
+    hospital = relationship("Hospital", back_populates="wards")
 
 
 class Room(Base):
     __tablename__ = "rooms"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
     ward_id = Column(UUID(as_uuid=True), ForeignKey("wards.id", ondelete="CASCADE"), nullable=False)
     room_number = Column(String(10), nullable=False)
     room_type = Column(String(30), nullable=False)
@@ -74,12 +104,14 @@ class Room(Base):
     # Relationships
     ward = relationship("Ward", back_populates="rooms")
     beds = relationship("Bed", back_populates="room", cascade="all, delete-orphan")
+    hospital = relationship("Hospital", back_populates="rooms")
 
 
 class Bed(Base):
     __tablename__ = "beds"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
     room_id = Column(UUID(as_uuid=True), ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
     bed_number = Column(String(10), nullable=False)
     status = Column(String(20), nullable=False, default="available")
@@ -88,12 +120,14 @@ class Bed(Base):
     # Relationships
     room = relationship("Room", back_populates="beds")
     admissions = relationship("Admission", back_populates="bed")
+    hospital = relationship("Hospital", back_populates="beds")
 
 
 class Admission(Base):
     __tablename__ = "admissions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
     patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
     bed_id = Column(UUID(as_uuid=True), ForeignKey("beds.id", ondelete="SET NULL"), nullable=True)
     admission_date = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -108,12 +142,14 @@ class Admission(Base):
     bed = relationship("Bed", back_populates="admissions")
     doctor_assignments = relationship("DoctorAssignment", back_populates="admission", cascade="all, delete-orphan")
     prescriptions = relationship("Prescription", back_populates="admission")
+    hospital = relationship("Hospital", back_populates="admissions")
 
 
 class DoctorAssignment(Base):
     __tablename__ = "doctor_assignments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
     admission_id = Column(UUID(as_uuid=True), ForeignKey("admissions.id", ondelete="CASCADE"), nullable=False)
     doctor_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     assigned_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -123,12 +159,14 @@ class DoctorAssignment(Base):
     # Relationships
     admission = relationship("Admission", back_populates="doctor_assignments")
     doctor = relationship("User", back_populates="doctor_assignments")
+    hospital = relationship("Hospital", back_populates="doctor_assignments")
 
 
 class StaffAssignment(Base):
     __tablename__ = "staff_assignments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
     ward_id = Column(UUID(as_uuid=True), ForeignKey("wards.id", ondelete="CASCADE"), nullable=False)
     staff_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     shift_start = Column(DateTime(timezone=True), nullable=False)
@@ -138,12 +176,14 @@ class StaffAssignment(Base):
     # Relationships
     ward = relationship("Ward", back_populates="staff_assignments")
     staff = relationship("User", back_populates="staff_assignments")
+    hospital = relationship("Hospital", back_populates="staff_assignments")
 
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     action = Column(String(50), nullable=False)
     entity_name = Column(String(50), nullable=False)
@@ -152,11 +192,15 @@ class AuditLog(Base):
     new_values = Column(JSONB, nullable=True)
     timestamp = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
+    # Relationships
+    hospital = relationship("Hospital", back_populates="audit_logs")
+
 
 class Prescription(Base):
     __tablename__ = "prescriptions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
     admission_id = Column(UUID(as_uuid=True), ForeignKey("admissions.id", ondelete="CASCADE"), nullable=False)
     patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
     prescribed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -172,3 +216,4 @@ class Prescription(Base):
     admission = relationship("Admission", back_populates="prescriptions")
     patient = relationship("Patient", back_populates="prescriptions")
     prescribed_by_user = relationship("User", back_populates="prescriptions")
+    hospital = relationship("Hospital", back_populates="prescriptions")

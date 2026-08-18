@@ -1,22 +1,32 @@
 from uuid import UUID
+from typing import Optional, List
 from datetime import datetime, timezone
-from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
+from sqlalchemy.orm import Session, joinedload
 from app.models.models import Admission, Bed, Patient, DoctorAssignment
 from app.schemas.admission import AdmissionCreate, DischargeRequest
 from app.core.audit import log_audit
 
 
-def admit_patient(db: Session, admission_data: AdmissionCreate, user_id: UUID) -> Admission:
-    # 1. Check patient exists
-    patient = db.query(Patient).filter(
+def admit_patient(
+    db: Session, 
+    admission_data: AdmissionCreate, 
+    user_id: UUID,
+    hospital_id: Optional[UUID] = None
+) -> Admission:
+    # 1. Check patient exists and belongs to current hospital
+    patient_query = db.query(Patient).filter(
         Patient.id == admission_data.patient_id,
         Patient.is_deleted == False
-    ).first()
+    )
+    if hospital_id:
+        patient_query = patient_query.filter(Patient.hospital_id == hospital_id)
+        
+    patient = patient_query.first()
     if not patient:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found"
+            detail="Patient not found or belongs to another hospital"
         )
 
     # 2. Check patient not already admitted
@@ -64,19 +74,23 @@ def admit_patient(db: Session, admission_data: AdmissionCreate, user_id: UUID) -
         "patient_id": str(admission_data.patient_id),
         "bed_id": str(admission_data.bed_id),
         "reason": admission_data.reason_for_admission
-    })
+    }, hospital_id=hospital_id)
     db.commit()
 
     return admission
 
 
-def discharge_patient(db: Session, admission_id: UUID, discharge_data: DischargeRequest, user_id: UUID) -> Admission:
-    # 1. Find active admission
-    admission = db.query(Admission).filter(
-        Admission.id == admission_id,
-        Admission.status == "admitted"
-    ).first()
-    if not admission:
+def discharge_patient(
+    db: Session, 
+    admission_id: UUID, 
+    discharge_data: DischargeRequest, 
+    user_id: UUID,
+    hospital_id: Optional[UUID] = None,
+    user_role: Optional[str] = None
+) -> Admission:
+    # 1. Find active admission (scoped by hospital)
+    admission = get_admission(db, admission_id, hospital_id=hospital_id, user_role=user_role)
+    if not admission or admission.status != "admitted":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Active admission not found"
@@ -97,31 +111,68 @@ def discharge_patient(db: Session, admission_id: UUID, discharge_data: Discharge
 
     # 4. Write audit log
     log_audit(db, user_id, "PATIENT_DISCHARGED", "admissions", admission.id,
-                    {"status": "admitted"},
-                    {"status": "discharged", "bed_status": discharge_data.bed_status})
+              {"status": "admitted"},
+              {"status": "discharged", "bed_status": discharge_data.bed_status},
+              hospital_id=hospital_id)
     db.commit()
 
     return admission
 
 
-def get_active_admissions(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(Admission).options(
+def get_active_admissions(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 100,
+    hospital_id: Optional[UUID] = None,
+    user_role: Optional[str] = None
+) -> List[Admission]:
+    query = db.query(Admission).options(
         joinedload(Admission.patient),
         joinedload(Admission.bed),
         joinedload(Admission.doctor_assignments)
-    ).filter(
+    ).join(Patient).filter(
         Admission.status == "admitted"
-    ).order_by(Admission.admission_date.desc()).offset(skip).limit(limit).all()
+    )
 
-def get_admission(db: Session, admission_id: UUID) -> Admission:
-    return db.query(Admission).options(
+    if user_role != "super_admin" and hospital_id:
+        query = query.filter(Patient.hospital_id == hospital_id)
+
+    return query.order_by(Admission.admission_date.desc()).offset(skip).limit(limit).all()
+
+
+def get_admission(
+    db: Session, 
+    admission_id: UUID,
+    hospital_id: Optional[UUID] = None,
+    user_role: Optional[str] = None
+) -> Optional[Admission]:
+    query = db.query(Admission).options(
         joinedload(Admission.patient),
         joinedload(Admission.bed),
         joinedload(Admission.doctor_assignments)
-    ).filter(Admission.id == admission_id).first()
+    ).join(Patient).filter(Admission.id == admission_id)
+
+    if user_role != "super_admin" and hospital_id:
+        query = query.filter(Patient.hospital_id == hospital_id)
+
+    return query.first()
 
 
-def get_admission_history(db: Session, patient_id: UUID):
-    return db.query(Admission).filter(
+def get_admission_history(
+    db: Session, 
+    patient_id: UUID,
+    hospital_id: Optional[UUID] = None,
+    user_role: Optional[str] = None
+) -> List[Admission]:
+    query = db.query(Admission).options(
+        joinedload(Admission.patient),
+        joinedload(Admission.bed),
+        joinedload(Admission.doctor_assignments)
+    ).join(Patient).filter(
         Admission.patient_id == patient_id
-    ).order_by(Admission.admission_date.desc()).all()
+    )
+
+    if user_role != "super_admin" and hospital_id:
+        query = query.filter(Patient.hospital_id == hospital_id)
+
+    return query.order_by(Admission.admission_date.desc()).all()

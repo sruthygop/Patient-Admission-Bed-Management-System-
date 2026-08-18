@@ -8,7 +8,8 @@ from app.models.models import User, AuditLog
 router = APIRouter()
 
 def check_role(current_user: User, allowed_roles: list):
-    if current_user.role not in allowed_roles:
+    extended_roles = allowed_roles + ["super_admin"]
+    if current_user.role not in extended_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Action forbidden. Required roles: {', '.join(allowed_roles)}"
@@ -21,20 +22,26 @@ def get_audit_logs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Only admin and CMO can view audit logs
-    # CMO can only view local (hospital) audit logs
-    # Admin can view all audit logs
-    check_role(current_user, ["admin", "cmo"])
+    # Admin sees hospital audit logs
+    # Super Admin sees ALL audit logs across all hospitals
+    check_role(current_user, ["admin"])
 
-    logs = db.query(AuditLog).order_by(
-        desc(AuditLog.timestamp)
-    ).offset(skip).limit(limit).all()
+    query = db.query(AuditLog).order_by(desc(AuditLog.timestamp))
+
+    # Super admin sees all logs across all hospitals
+    if current_user.role != "super_admin":
+        query = query.filter(
+            AuditLog.hospital_id == current_user.hospital_id
+        )
+
+    logs = query.offset(skip).limit(limit).all()
 
     result = []
     for log in logs:
         result.append({
             "id": str(log.id),
             "user_id": str(log.user_id) if log.user_id else None,
+            "hospital_id": str(log.hospital_id) if log.hospital_id else None,
             "action": log.action,
             "entity_name": log.entity_name,
             "entity_id": str(log.entity_id),

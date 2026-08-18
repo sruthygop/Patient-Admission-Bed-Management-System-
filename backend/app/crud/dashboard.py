@@ -1,28 +1,58 @@
 from datetime import datetime, date, timedelta
-from typing import Dict, List, Any
-from sqlalchemy.orm import Session
+from typing import Dict, List, Any, Optional
+from uuid import UUID
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from app.models.models import Patient, Bed, Ward, Room, Admission
 
-def get_dashboard_stats(db: Session) -> Dict[str, Any]:
-    # 1. Core global counts
-    total_patients = db.query(Patient).filter(Patient.is_deleted == False).count()
-    total_beds = db.query(Bed).count()
-    occupied_beds = db.query(Bed).filter(Bed.status == "occupied").count()
-    available_beds = db.query(Bed).filter(Bed.status == "available").count()
-    maintenance_beds = db.query(Bed).filter(Bed.status == "maintenance").count()
-    active_admissions = db.query(Admission).filter(Admission.status == "admitted").count()
+
+def get_dashboard_stats(db: Session, hospital_id: Optional[UUID] = None) -> Dict[str, Any]:
+
+    # 1. Core global counts — filtered by hospital
+    patient_query = db.query(Patient).filter(Patient.is_deleted == False)
+    bed_query = db.query(Bed)
+    admission_query = db.query(Admission)
+
+    if hospital_id:
+        patient_query = patient_query.filter(Patient.hospital_id == hospital_id)
+        bed_query = bed_query.filter(Bed.hospital_id == hospital_id)
+        admission_query = admission_query.filter(Admission.hospital_id == hospital_id)
+
+    total_patients = patient_query.count()
+    total_beds = bed_query.count()
+    occupied_beds = bed_query.filter(Bed.status == "occupied").count()
+    available_beds = bed_query.filter(Bed.status == "available").count()
+    maintenance_beds = bed_query.filter(Bed.status == "maintenance").count()
+    active_admissions = admission_query.filter(Admission.status == "admitted").count()
     global_occupancy_rate = (occupied_beds / total_beds * 100) if total_beds > 0 else 0.0
 
-    # 2. Ward Occupancy list
-    wards = db.query(Ward).all()
+    # 2. Ward Occupancy — optimized with eager loading (fixes N+1 query issue)
+    ward_query = db.query(Ward).options(
+        joinedload(Ward.rooms).joinedload(Room.beds)
+    )
+    if hospital_id:
+        ward_query = ward_query.filter(Ward.hospital_id == hospital_id)
+    wards = ward_query.all()
+
     ward_occupancy: List[Dict[str, Any]] = []
     for ward in wards:
-        beds = db.query(Bed).join(Room).filter(Room.ward_id == ward.id).all()
-        t_beds = len(beds)
-        o_beds = sum(1 for b in beds if b.status == "occupied")
-        a_beds = sum(1 for b in beds if b.status == "available")
-        m_beds = sum(1 for b in beds if b.status == "maintenance")
+        t_beds = 0
+        o_beds = 0
+        a_beds = 0
+        m_beds = 0
+        for room in ward.rooms:
+            for bed in room.beds:
+                # Defense-in-depth: verify bed belongs to correct hospital
+                if hospital_id and bed.hospital_id != hospital_id:
+                    continue
+                t_beds += 1
+                if bed.status == "occupied":
+                    o_beds += 1
+                elif bed.status == "available":
+                    a_beds += 1
+                elif bed.status == "maintenance":
+                    m_beds += 1
+
         occ_rate = (o_beds / t_beds * 100) if t_beds > 0 else 0.0
         ward_occupancy.append({
             "ward_id": ward.id,
@@ -36,7 +66,7 @@ def get_dashboard_stats(db: Session) -> Dict[str, Any]:
             "occupancy_rate": round(occ_rate, 2)
         })
 
-    # 3. Admission Trends (Last 7 Days)
+    # 3. Admission Trends (Last 7 Days) — filtered by hospital
     end_date = datetime.now()
     start_date = end_date - timedelta(days=6)
 
@@ -45,13 +75,16 @@ def get_dashboard_stats(db: Session) -> Dict[str, Any]:
         d = (start_date + timedelta(days=i)).date()
         trends_dict[d] = {"admissions": 0, "discharges": 0}
 
-    # Query admissions where admission OR discharge happened in last 7 days
-    admissions_in_range = db.query(Admission).filter(
+    trend_query = db.query(Admission).filter(
         or_(
             Admission.admission_date >= start_date,
             Admission.discharge_date >= start_date
         )
-    ).all()
+    )
+    if hospital_id:
+        trend_query = trend_query.filter(Admission.hospital_id == hospital_id)
+
+    admissions_in_range = trend_query.all()
 
     for adm in admissions_in_range:
         adm_date = adm.admission_date.date()
@@ -71,13 +104,17 @@ def get_dashboard_stats(db: Session) -> Dict[str, Any]:
         for d, val in sorted(trends_dict.items())
     ]
 
-    # 4. Recent Admissions - both recently admitted AND recently discharged
-    recent_adms_raw = db.query(Admission).filter(
+    # 4. Recent Admissions — filtered by hospital
+    recent_query = db.query(Admission).filter(
         or_(
             Admission.admission_date >= datetime.now() - timedelta(days=30),
             Admission.discharge_date >= datetime.now() - timedelta(days=7)
         )
-    ).order_by(
+    )
+    if hospital_id:
+        recent_query = recent_query.filter(Admission.hospital_id == hospital_id)
+
+    recent_adms_raw = recent_query.order_by(
         Admission.admission_date.desc()
     ).limit(10).all()
 

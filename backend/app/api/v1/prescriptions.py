@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
 from uuid import UUID
 from pydantic import BaseModel
-from datetime import datetime
 from app.core.database import get_db
 from app.models.models import Prescription, Admission, Patient, User
 from app.api.v1.auth import get_current_user
@@ -19,21 +17,37 @@ class PrescriptionCreate(BaseModel):
     duration: str
     instructions: str = None
 
+
+def check_hospital_access(current_user: User, hospital_id):
+    if current_user.role == "super_admin":
+        return
+    if hospital_id and hospital_id != current_user.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied — resource belongs to a different hospital"
+        )
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_prescription(
     prescription_in: PrescriptionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role not in ["doctor", "cmo"]:
+    if current_user.role not in ["doctor", "cmo", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only doctors can create prescriptions"
+            detail="Only doctors and CMO can create prescriptions"
         )
 
-    admission = db.query(Admission).filter(Admission.id == prescription_in.admission_id).first()
+    admission = db.query(Admission).filter(
+        Admission.id == prescription_in.admission_id
+    ).first()
     if not admission:
         raise HTTPException(status_code=404, detail="Admission not found")
+
+    # Verify admission belongs to current hospital
+    check_hospital_access(current_user, getattr(admission, "hospital_id", None))
 
     prescription = Prescription(
         admission_id=prescription_in.admission_id,
@@ -44,7 +58,8 @@ def create_prescription(
         frequency=prescription_in.frequency,
         duration=prescription_in.duration,
         instructions=prescription_in.instructions,
-        is_active=True
+        is_active=True,
+        hospital_id=current_user.hospital_id
     )
     db.add(prescription)
     db.commit()
@@ -61,15 +76,24 @@ def create_prescription(
         "prescribed_by_name": f"{current_user.first_name} {current_user.last_name}"
     }
 
+
 @router.get("/admission/{admission_id}")
 def get_prescriptions_by_admission(
     admission_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    prescriptions = db.query(Prescription).filter(
+    query = db.query(Prescription).filter(
         Prescription.admission_id == admission_id
-    ).order_by(Prescription.prescribed_at.desc()).all()
+    )
+
+    # Filter by hospital
+    if current_user.role != "super_admin":
+        query = query.filter(
+            Prescription.hospital_id == current_user.hospital_id
+        )
+
+    prescriptions = query.order_by(Prescription.prescribed_at.desc()).all()
 
     result = []
     for p in prescriptions:
@@ -86,6 +110,7 @@ def get_prescriptions_by_admission(
             "prescribed_by_name": f"{doctor.first_name} {doctor.last_name}" if doctor else "Unknown"
         })
     return result
+
 
 @router.get("/patient/{patient_id}")
 def get_prescriptions_by_patient(
@@ -93,9 +118,17 @@ def get_prescriptions_by_patient(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    prescriptions = db.query(Prescription).filter(
+    query = db.query(Prescription).filter(
         Prescription.patient_id == patient_id
-    ).order_by(Prescription.prescribed_at.desc()).all()
+    )
+
+    # Filter by hospital
+    if current_user.role != "super_admin":
+        query = query.filter(
+            Prescription.hospital_id == current_user.hospital_id
+        )
+
+    prescriptions = query.order_by(Prescription.prescribed_at.desc()).all()
 
     result = []
     for p in prescriptions:
@@ -113,21 +146,30 @@ def get_prescriptions_by_patient(
         })
     return result
 
+
 @router.delete("/{prescription_id}")
 def deactivate_prescription(
     prescription_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role not in ["admin", "doctor", "cmo"]:
+    if current_user.role not in ["doctor", "cmo", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only doctors and admins can deactivate prescriptions"
+            detail="Only doctors and CMO can deactivate prescriptions"
         )
 
-    prescription = db.query(Prescription).filter(
+    query = db.query(Prescription).filter(
         Prescription.id == prescription_id
-    ).first()
+    )
+
+    # Filter by hospital
+    if current_user.role != "super_admin":
+        query = query.filter(
+            Prescription.hospital_id == current_user.hospital_id
+        )
+
+    prescription = query.first()
 
     if not prescription:
         raise HTTPException(status_code=404, detail="Prescription not found")
