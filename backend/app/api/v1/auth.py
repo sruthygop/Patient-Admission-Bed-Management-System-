@@ -36,6 +36,7 @@ class UserCreate(BaseModel):
     role: str
     first_name: str
     last_name: str
+    hospital_id: Optional[str] = None  # Added for Super Admin creation support
 
 class UserUpdate(BaseModel):
     first_name: Optional[str] = None
@@ -173,10 +174,8 @@ def list_doctors(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Filter doctors by active status AND hospital_id
     query = db.query(User).filter(User.role == "doctor", User.is_active == True)
     
-    # Non-superadmins only see doctors from their own hospital
     if current_user.role != "super_admin":
         query = query.filter(User.hospital_id == current_user.hospital_id)
         
@@ -197,7 +196,6 @@ def get_all_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Admin, CMO, and Super Admin can view users
     allowed_roles = ["admin", "cmo", "super_admin"]
     if current_user.role not in allowed_roles:
         raise HTTPException(
@@ -205,7 +203,6 @@ def get_all_users(
             detail="Admin only"
         )
     
-    # Super Admin sees users across ALL hospitals; Hospital admins only see their hospital
     if current_user.role == "super_admin":
         users = db.query(User).all()
     else:
@@ -233,7 +230,6 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Only Admin or Super Admin can create new users
     if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -267,6 +263,17 @@ def create_user(
             detail="Password must be at least 8 characters"
         )
 
+    # Determine target hospital ID
+    if current_user.role == "super_admin":
+        target_hospital_id = user_data.hospital_id
+        if not target_hospital_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="super_admin must specify hospital_id when creating a user"
+            )
+    else:
+        target_hospital_id = current_user.hospital_id
+
     new_user = User(
         username=user_data.username,
         email=user_data.email,
@@ -274,7 +281,7 @@ def create_user(
         role=user_data.role,
         first_name=user_data.first_name,
         last_name=user_data.last_name,
-        hospital_id=current_user.hospital_id,  # Link to creator's hospital
+        hospital_id=target_hospital_id,
         is_active=True
     )
     db.add(new_user)
@@ -301,7 +308,6 @@ def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Only Admin or Super Admin can update users
     if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -315,7 +321,6 @@ def update_user(
             detail="User not found"
         )
 
-    # Prevent a regular hospital admin from editing users outside their hospital
     if current_user.role != "super_admin" and user.hospital_id != current_user.hospital_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -369,8 +374,7 @@ def admin_reset_password(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-        
-    # Prevent a regular hospital admin from resetting passwords outside their hospital
+
     if current_user.role != "super_admin" and user.hospital_id != current_user.hospital_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

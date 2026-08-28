@@ -109,6 +109,14 @@ def assign_doctor(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Admission not found"
         )
+
+    # NEW CHECK 1: block assigning a doctor to a discharged admission
+    if admission.discharge_date is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot assign a doctor to a discharged admission"
+        )
+
     verify_admission_hospital_access(admission, current_user)
     doctor = db.query(User).filter(
         User.id == doctor_id,
@@ -125,6 +133,19 @@ def assign_doctor(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied — doctor belongs to a different hospital"
         )
+
+    # NEW CHECK 2: block duplicate active assignment of the same doctor to the same admission
+    existing_assignment = db.query(DoctorAssignment).filter(
+        DoctorAssignment.admission_id == admission_id,
+        DoctorAssignment.doctor_id == doctor_id,
+        DoctorAssignment.unassigned_at == None
+    ).first()
+    if existing_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This doctor is already actively assigned to this admission"
+        )
+
     target_hospital_id = current_user.hospital_id or getattr(doctor, "hospital_id", None)
     assignment = DoctorAssignment(
         admission_id=admission_id,

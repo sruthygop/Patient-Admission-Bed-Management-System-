@@ -46,6 +46,13 @@ def create_prescription(
     if not admission:
         raise HTTPException(status_code=404, detail="Admission not found")
 
+    # NEW CHECK: block prescribing to a discharged admission
+    if admission.discharge_date is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot create a prescription for a discharged admission"
+        )
+
     # Verify admission belongs to current hospital
     check_hospital_access(current_user, getattr(admission, "hospital_id", None))
 

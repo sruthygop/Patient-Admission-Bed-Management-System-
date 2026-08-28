@@ -53,12 +53,20 @@ def admit_patient(
             detail=f"Bed is not available. Current status: {bed.status}"
         )
 
+    # 3.5 Check bed belongs to the same hospital (prevents cross-tenant admission)
+    if hospital_id and bed.hospital_id != hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bed does not belong to your hospital"
+        )
+
     # 4. Create admission
     admission = Admission(
         patient_id=admission_data.patient_id,
         bed_id=admission_data.bed_id,
         reason_for_admission=admission_data.reason_for_admission,
-        status="admitted"
+        status="admitted",
+        hospital_id=hospital_id
     )
     db.add(admission)
     db.flush()

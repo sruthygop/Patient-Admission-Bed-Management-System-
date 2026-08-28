@@ -3,7 +3,8 @@ from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from app.models.models import Patient
+from fastapi import HTTPException, status
+from app.models.models import Patient, Admission
 from app.schemas.patient import PatientCreate, PatientUpdate
 from app.core.audit import log_audit
 
@@ -125,6 +126,18 @@ def update_patient(
 
 
 def delete_patient(db: Session, db_obj: Patient, current_user_id: UUID) -> Patient:
+    # Block deletion if patient has an active (non-discharged) admission
+    active_admission = db.query(Admission).filter(
+        Admission.patient_id == db_obj.id,
+        Admission.discharge_date == None
+    ).first()
+
+    if active_admission:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete patient with an active admission. Please discharge the patient first."
+        )
+
     db_obj.is_deleted = True
     db.add(db_obj)
 

@@ -322,7 +322,10 @@ def seed_database(db: Session):
     ]
 
     for wd in wards_data:
-        ward = db.query(Ward).filter(Ward.name == wd["name"]).first()
+        ward = db.query(Ward).filter(
+            Ward.name == wd["name"],
+            Ward.hospital_id == hospital1_id
+        ).first()
         if not ward:
             ward = Ward(
                 name=wd["name"],
@@ -413,6 +416,129 @@ def seed_database(db: Session):
             print(f"Created Ward: {wd['name']} (MCH-002)")
 
     db.commit()
+
+    
+    # 8. Seed Patients for Hospital 1 (Settlement Sense Hospital)
+    ss_patients = [
+        {
+            "first_name": "Jane", "last_name": "Miller", "gender": "Female", 
+            "date_of_birth": date(1990, 5, 14), "phone_number": "555-0101", 
+            "email": "jane.miller@example.com", "address": "123 Main St",
+            "emergency_contact_name": "John Miller", "emergency_contact_phone": "555-9901", "blood_group": "A+"
+        },
+        {
+            "first_name": "Bob", "last_name": "Smith", "gender": "Male", 
+            "date_of_birth": date(1982, 11, 23), "phone_number": "555-0102", 
+            "email": "bob.smith@example.com", "address": "456 Oak Ave",
+            "emergency_contact_name": "Mary Smith", "emergency_contact_phone": "555-9902", "blood_group": "O+"
+        },
+        {
+            "first_name": "Emma", "last_name": "Watson", "gender": "Female", 
+            "date_of_birth": date(1995, 3, 10), "phone_number": "555-0103", 
+            "email": "emma.watson@example.com", "address": "789 Pine Rd",
+            "emergency_contact_name": "Alex Watson", "emergency_contact_phone": "555-9903", "blood_group": "B+"
+        },
+        {
+            "first_name": "Sarah", "last_name": "Connor", "gender": "Female", 
+            "date_of_birth": date(1985, 8, 30), "phone_number": "555-0104", 
+            "email": "sarah.connor@example.com", "address": "321 Maple St",
+            "emergency_contact_name": "Kyle Reese", "emergency_contact_phone": "555-9904", "blood_group": "AB+"
+        },
+        {
+            "first_name": "Nanditha", "last_name": "Ajesh", "gender": "Female", 
+            "date_of_birth": date(1998, 1, 15), "phone_number": "555-0105", 
+            "email": "nanditha@example.com", "address": "654 Elm St",
+            "emergency_contact_name": "Ajesh Kumar", "emergency_contact_phone": "555-9905", "blood_group": "O-"
+        },
+        {
+            "first_name": "Anikha", "last_name": "Menon", "gender": "Female", 
+            "date_of_birth": date(2000, 7, 22), "phone_number": "555-0106", 
+            "email": "anikha@example.com", "address": "987 Cedar Ln",
+            "emergency_contact_name": "Suresh Menon", "emergency_contact_phone": "555-9906", "blood_group": "A-"
+        },
+        {
+            "first_name": "Mekha", "last_name": "Nikhil", "gender": "Female", 
+            "date_of_birth": date(1997, 12, 5), "phone_number": "555-0107", 
+            "email": "mekha@example.com", "address": "147 Birch Dr",
+            "emergency_contact_name": "Nikhil Raj", "emergency_contact_phone": "555-9907", "blood_group": "B-"
+        }
+    ]
+
+    for p in ss_patients:
+        patient = db.query(Patient).filter(
+            Patient.hospital_id == hospital1_id,
+            (Patient.email == p["email"]) | 
+            (
+                Patient.first_name.ilike(p["first_name"]) & 
+                Patient.last_name.ilike(p["last_name"])
+            )
+        ).first()
+        if not patient:
+            patient = Patient(
+                first_name=p["first_name"],
+                last_name=p["last_name"],
+                gender=p["gender"],
+                date_of_birth=p["date_of_birth"],
+                phone_number=p["phone_number"],
+                email=p["email"],
+                address=p["address"],
+                emergency_contact_name=p["emergency_contact_name"],
+                emergency_contact_phone=p["emergency_contact_phone"],
+                blood_group=p["blood_group"],
+                hospital_id=hospital1_id,
+                is_deleted=False
+            )
+            db.add(patient)
+    print("Seeded patients for Hospital 1 (SS-001)")
+
+    # 9. Seed Patients for Hospital 2 (Metro Care Hospital)
+    metro_patients = [
+        {
+            "first_name": "Alice", "last_name": "Smith", "gender": "Female", 
+            "date_of_birth": date(1992, 4, 18), "phone_number": "555-0201", 
+            "email": "alice.smith@example.com", "address": "555 Metro Way",
+            "emergency_contact_name": "Tom Smith", "emergency_contact_phone": "555-9908", "blood_group": "O+"
+        },
+        {
+            "first_name": "David", "last_name": "Miller", "gender": "Male", 
+            "date_of_birth": date(1988, 9, 12), "phone_number": "555-0202", 
+            "email": "david.miller@example.com", "address": "777 City Blvd",
+            "emergency_contact_name": "Grace Miller", "emergency_contact_phone": "555-9909", "blood_group": "A+"
+        }
+    ]
+
+    for p in metro_patients:
+        patient = db.query(Patient).filter(
+            Patient.hospital_id == hospital2_id,
+            (Patient.email == p["email"]) | 
+            (
+                Patient.first_name.ilike(p["first_name"]) & 
+                Patient.last_name.ilike(p["last_name"])
+            )
+        ).first()
+        if not patient:
+            patient = Patient(
+                first_name=p["first_name"],
+                last_name=p["last_name"],
+                gender=p["gender"],
+                date_of_birth=p["date_of_birth"],
+                phone_number=p["phone_number"],
+                email=p["email"],
+                address=p["address"],
+                emergency_contact_name=p["emergency_contact_name"],
+                emergency_contact_phone=p["emergency_contact_phone"],
+                blood_group=p["blood_group"],
+                hospital_id=hospital2_id,
+                is_deleted=False
+            )
+            db.add(patient)
+    print("Seeded patients for Hospital 2 (MCH-002)")
+    # Backfill any remaining unassigned patients to Hospital 1
+    unassigned_patients = db.query(Patient).filter(Patient.hospital_id == None).all()
+    for p in unassigned_patients:
+        p.hospital_id = hospital1_id
+
+    db.commit()
     print("Database seeding completed successfully!")
     print("\n=== DEFAULT CREDENTIALS ===")
     print("Super Admin: superadmin@pabms.com / SuperAdmin123!")
@@ -426,7 +552,6 @@ def seed_database(db: Session):
     print("Admin: admin@metrocare.com / MetroAdmin123!")
     print("Doctor: doctor@metrocare.com / DoctorPass123!")
     print("Nurse: nurse@metrocare.com / NursePass123!")
-
 
 def main():
     create_db_if_not_exists()
