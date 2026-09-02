@@ -2,19 +2,32 @@ import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { TrendingUp, Activity, BedDouble, Users, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { TrendingUp, Activity, BedDouble, Users, ArrowUpRight, ArrowDownRight, Building2, ShieldCheck } from 'lucide-react';
 
 const Dashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
+  const [hospitals, setHospitals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const isSuperAdmin = user?.role === 'super_admin';
+
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchData = async () => {
       try {
-        const response = await api.get('/api/v1/dashboard/stats');
-        setStats(response.data);
+        setLoading(true);
+        if (isSuperAdmin) {
+          const [statsRes, hospitalRes] = await Promise.all([
+            api.get('/api/v1/dashboard/stats').catch(() => ({ data: null })),
+            api.get('/api/v1/hospitals/').catch(() => ({ data: [] }))
+          ]);
+          setStats(statsRes.data);
+          setHospitals(hospitalRes.data || []);
+        } else {
+          const response = await api.get('/api/v1/dashboard/stats');
+          setStats(response.data);
+        }
       } catch (err) {
         console.error('Failed to load dashboard stats:', err);
         setError('Could not load dashboard data.');
@@ -22,8 +35,8 @@ const Dashboard = () => {
         setLoading(false);
       }
     };
-    fetchStats();
-  }, []);
+    fetchData();
+  }, [isSuperAdmin]);
 
   if (loading) {
     return (
@@ -41,6 +54,138 @@ const Dashboard = () => {
     );
   }
 
+  // Super Admin Network Overview View
+  if (isSuperAdmin) {
+    const activeHospitalsCount = hospitals.filter((h) => h.is_active).length;
+    const totalNetworkBeds = stats?.total_beds || 0;
+    const occupiedNetworkBeds = stats?.occupied_beds || 0;
+    const globalOccupancy = stats?.global_occupancy_rate || 0;
+
+    return (
+      <div className="flex-1 p-8 overflow-y-auto bg-slate-50/30">
+        {/* Super Admin Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-full uppercase tracking-wider flex items-center gap-1">
+                  <ShieldCheck size={12} />
+                  Super Admin
+                </span>
+              </div>
+              <h1 className="text-2xl font-bold text-slate-800">Multi-Tenant Command Center</h1>
+              <p className="text-sm text-slate-400 mt-0.5">Global network health, tenant status, and multi-hospital bed allocation</p>
+            </div>
+            <span className="px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold rounded-full flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span>
+              Network Online
+            </span>
+          </div>
+        </div>
+
+        {/* High-Level Network KPIs */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 border-l-4 border-l-indigo-500 p-5">
+            <div className="flex items-start justify-between mb-3">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">ONBOARDED HOSPITALS</p>
+              <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center">
+                <Building2 size={18} className="text-indigo-600" />
+              </div>
+            </div>
+            <p className="text-4xl font-bold text-slate-800 leading-none mb-2">
+              {activeHospitalsCount} <span className="text-xl font-normal text-slate-400">/ {hospitals.length}</span>
+            </p>
+            <p className="text-xs text-slate-400">Active tenant facilities</p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 border-l-4 border-l-blue-500 p-5">
+            <div className="flex items-start justify-between mb-3">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">NETWORK OCCUPANCY</p>
+              <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center">
+                <TrendingUp size={18} className="text-blue-600" />
+              </div>
+            </div>
+            <p className="text-4xl font-bold text-slate-800 leading-none mb-2">{globalOccupancy.toFixed(1)}%</p>
+            <p className="text-xs text-slate-400">{occupiedNetworkBeds} of {totalNetworkBeds} beds occupied</p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 border-l-4 border-l-emerald-500 p-5">
+            <div className="flex items-start justify-between mb-3">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">ACTIVE ADMISSIONS</p>
+              <div className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center">
+                <Activity size={18} className="text-emerald-600" />
+              </div>
+            </div>
+            <p className="text-4xl font-bold text-slate-800 leading-none mb-2">{stats?.active_admissions || 0}</p>
+            <p className="text-xs text-slate-400">Total network active patients</p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 border-l-4 border-l-purple-500 p-5">
+            <div className="flex items-start justify-between mb-3">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">REGISTERED PATIENTS</p>
+              <div className="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center">
+                <Users size={18} className="text-purple-600" />
+              </div>
+            </div>
+            <p className="text-4xl font-bold text-slate-800 leading-none mb-2">{stats?.total_patients || 0}</p>
+            <p className="text-xs text-slate-400">Cross-hospital directory</p>
+          </div>
+        </div>
+
+        {/* Network Hospitals Overview */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-8">
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-slate-800">Hospital Network Directory</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Overview of registered tenants and system codes</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50 text-slate-400 font-bold text-xs uppercase tracking-wider">
+                  <th className="py-3 px-6">Hospital Name</th>
+                  <th className="py-3 px-6">Facility Code</th>
+                  <th className="py-3 px-6">Location</th>
+                  <th className="py-3 px-6">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {hospitals.map((hosp) => (
+                  <tr key={hosp.id || hosp.code} className="hover:bg-slate-50/50 transition-all duration-200">
+                    <td className="py-4 px-6 font-bold text-slate-800 flex items-center gap-2">
+                      <Building2 size={16} className="text-indigo-500" />
+                      {hosp.name}
+                    </td>
+                    <td className="py-4 px-6 text-xs font-mono font-bold text-indigo-600">{hosp.code}</td>
+                    <td className="py-4 px-6 text-xs text-slate-500">{hosp.location || hosp.address || 'Central'}</td>
+                    <td className="py-4 px-6">
+                      {hosp.is_active ? (
+                        <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-bold uppercase">
+                          ● Operational
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full text-[10px] font-bold uppercase">
+                          ● Deactivated
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {hospitals.length === 0 && (
+                  <tr>
+                    <td colSpan="4" className="py-6 text-center text-slate-400 text-xs">No onboarded hospitals found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Standard Hospital-Level Dashboard (For Admin, Doctor, CMO, Nurse, Receptionist)
   const statCards = [
     {
       label: 'OCCUPANCY RATE',

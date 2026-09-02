@@ -80,6 +80,7 @@ def admit_patient(
     # 6. Write audit log
     log_audit(db, user_id, "PATIENT_ADMITTED", "admissions", admission.id, None, {
         "patient_id": str(admission_data.patient_id),
+        "patient_name": f"{patient.first_name} {patient.last_name}",
         "bed_id": str(admission_data.bed_id),
         "reason": admission_data.reason_for_admission
     }, hospital_id=hospital_id)
@@ -120,7 +121,11 @@ def discharge_patient(
     # 4. Write audit log
     log_audit(db, user_id, "PATIENT_DISCHARGED", "admissions", admission.id,
               {"status": "admitted"},
-              {"status": "discharged", "bed_status": discharge_data.bed_status},
+              {
+                  "status": "discharged",
+                  "bed_status": discharge_data.bed_status,
+                  "patient_name": f"{admission.patient.first_name} {admission.patient.last_name}" if admission.patient else None
+              },
               hospital_id=hospital_id)
     db.commit()
 

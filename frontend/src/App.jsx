@@ -13,6 +13,7 @@ import Profile from './pages/Profile';
 import Analytics from './pages/Analytics';
 import Prescriptions from './pages/Prescriptions';
 import UserManagement from './pages/UserManagement';
+import HospitalManagement from './pages/HospitalManagement';
 
 function ProtectedLayout({ children }) {
   const { user, loading } = useAuth();
@@ -139,6 +140,14 @@ function AppRoutes() {
         element={
           <ProtectedLayout>
             <UserManagement />
+          </ProtectedLayout>
+        }
+      />
+      <Route
+        path="/hospital-management"
+        element={
+          <ProtectedLayout>
+            <HospitalManagement />
           </ProtectedLayout>
         }
       />

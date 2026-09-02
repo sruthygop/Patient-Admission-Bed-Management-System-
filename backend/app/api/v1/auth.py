@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.core.config import settings
 from app.models.models import User
+from app.core.audit import log_audit
 
 router = APIRouter()
 
@@ -36,7 +37,7 @@ class UserCreate(BaseModel):
     role: str
     first_name: str
     last_name: str
-    hospital_id: Optional[str] = None  # Added for Super Admin creation support
+    hospital_id: Optional[str] = None
 
 class UserUpdate(BaseModel):
     first_name: Optional[str] = None
@@ -68,7 +69,7 @@ def get_current_user(
         raise credentials_exception
     return user
 
-# ==================== AUTH ENDPOINTS ====================
+# ==================== AUTH & USER ENDPOINTS ====================
 
 @router.post("/login")
 def login(
@@ -129,8 +130,28 @@ def update_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    old_values = {
+        "first_name": current_user.first_name,
+        "last_name": current_user.last_name
+    }
+
     current_user.first_name = profile_data.first_name
     current_user.last_name = profile_data.last_name
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="USER_PROFILE_UPDATED",
+        entity_name="users",
+        entity_id=current_user.id,
+        old_values=old_values,
+        new_values={
+            "first_name": profile_data.first_name,
+            "last_name": profile_data.last_name
+        },
+        hospital_id=current_user.hospital_id
+    )
+
     db.commit()
     db.refresh(current_user)
     return {
@@ -165,6 +186,18 @@ def change_password(
         )
 
     current_user.password_hash = get_password_hash(password_data.new_password)
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="USER_PASSWORD_CHANGED",
+        entity_name="users",
+        entity_id=current_user.id,
+        old_values=None,
+        new_values={"status": "password_changed"},
+        hospital_id=current_user.hospital_id
+    )
+
     db.commit()
     return {"message": "Password changed successfully"}
 
@@ -263,7 +296,6 @@ def create_user(
             detail="Password must be at least 8 characters"
         )
 
-    # Determine target hospital ID
     if current_user.role == "super_admin":
         target_hospital_id = user_data.hospital_id
         if not target_hospital_id:
@@ -285,6 +317,26 @@ def create_user(
         is_active=True
     )
     db.add(new_user)
+    db.flush()
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="USER_CREATED",
+        entity_name="users",
+        entity_id=new_user.id,
+        old_values=None,
+        new_values={
+            "username": new_user.username,
+            "email": new_user.email,
+            "role": new_user.role,
+            "first_name": new_user.first_name,
+            "last_name": new_user.last_name,
+            "hospital_id": str(target_hospital_id) if target_hospital_id else None
+        },
+        hospital_id=target_hospital_id
+    )
+
     db.commit()
     db.refresh(new_user)
 
@@ -327,6 +379,13 @@ def update_user(
             detail="Cannot update users belonging to another hospital"
         )
 
+    old_values = {
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "role": user.role,
+        "is_active": user.is_active
+    }
+
     if user_data.first_name is not None:
         user.first_name = user_data.first_name
     if user_data.last_name is not None:
@@ -341,6 +400,24 @@ def update_user(
         user.role = user_data.role
     if user_data.is_active is not None:
         user.is_active = user_data.is_active
+
+    new_values = {
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "role": user.role,
+        "is_active": user.is_active
+    }
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="USER_UPDATED",
+        entity_name="users",
+        entity_id=user.id,
+        old_values=old_values,
+        new_values=new_values,
+        hospital_id=user.hospital_id
+    )
 
     db.commit()
     db.refresh(user)
@@ -386,6 +463,19 @@ def admin_reset_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 8 characters"
         )
+
     user.password_hash = get_password_hash(reset_data.new_password)
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="ADMIN_RESET_PASSWORD",
+        entity_name="users",
+        entity_id=user.id,
+        old_values=None,
+        new_values={"reset_target_username": user.username},
+        hospital_id=user.hospital_id
+    )
+
     db.commit()
     return {"message": f"Password reset successfully for {user.username}"}

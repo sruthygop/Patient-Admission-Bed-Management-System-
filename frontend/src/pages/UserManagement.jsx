@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, AlertCircle, CheckCircle2, Plus, Edit2, X, Users, Shield } from 'lucide-react';
 
 const UserManagement = () => {
     const { user } = useAuth();
+    const isSuperAdmin = user?.role === 'super_admin';
+
     const [users, setUsers] = useState([]);
+    const [hospitals, setHospitals] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -19,9 +22,10 @@ const UserManagement = () => {
         role: 'nurse',
         first_name: '',
         last_name: '',
+        hospital_id: '',
     });
 
-    const fetchUsers = async () => {
+    const fetchUsers = useCallback(async () => {
         try {
             const response = await api.get('/api/v1/auth/users');
             setUsers(response.data);
@@ -31,11 +35,23 @@ const UserManagement = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    const fetchHospitals = useCallback(async () => {
+        try {
+            const response = await api.get('/api/v1/hospitals/');
+            setHospitals(response.data);
+        } catch (err) {
+            console.error('Failed to load hospitals:', err);
+        }
+    }, []);
 
     useEffect(() => {
         fetchUsers();
-    }, []);
+        if (isSuperAdmin) {
+            fetchHospitals();
+        }
+    }, [isSuperAdmin, fetchUsers, fetchHospitals]);
 
     const handleOpenModal = (userToEdit = null) => {
         if (userToEdit) {
@@ -47,6 +63,7 @@ const UserManagement = () => {
                 role: userToEdit.role,
                 first_name: userToEdit.first_name,
                 last_name: userToEdit.last_name,
+                hospital_id: userToEdit.hospital_id || '',
             });
         } else {
             setEditingUser(null);
@@ -57,6 +74,7 @@ const UserManagement = () => {
                 role: 'nurse',
                 first_name: '',
                 last_name: '',
+                hospital_id: '',
             });
         }
         setIsModalOpen(true);
@@ -75,6 +93,10 @@ const UserManagement = () => {
                 });
                 setSuccess('User updated successfully!');
             } else {
+                if (isSuperAdmin && formData.role !== 'super_admin' && !formData.hospital_id) {
+                    setError('Please select a hospital for this user.');
+                    return;
+                }
                 await api.post('/api/v1/auth/users/create', formData);
                 setSuccess('User created successfully!');
             }
@@ -102,6 +124,7 @@ const UserManagement = () => {
     const getRoleBadgeColor = (role) => {
         switch (role) {
             case 'admin': return 'bg-red-50 text-red-700 border-red-200';
+            case 'super_admin': return 'bg-slate-800 text-white border-slate-900';
             case 'doctor': return 'bg-blue-50 text-blue-700 border-blue-200';
             case 'cmo': return 'bg-purple-50 text-purple-700 border-purple-200';
             case 'nurse': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
@@ -110,13 +133,13 @@ const UserManagement = () => {
         }
     };
 
-    if (user?.role !== 'admin') {
+    if (user?.role !== 'admin' && user?.role !== 'super_admin') {
         return (
             <div className="flex-1 flex items-center justify-center">
                 <div className="text-center">
                     <Shield size={48} className="text-slate-300 mx-auto mb-3" />
                     <h3 className="text-base font-bold text-slate-800">Access Restricted</h3>
-                    <p className="text-sm text-slate-400 mt-1">Only administrators can manage users.</p>
+                    <p className="text-sm text-slate-400 mt-1">Only administrators and super admins can manage users.</p>
                 </div>
             </div>
         );
@@ -149,7 +172,9 @@ const UserManagement = () => {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800">User Management</h1>
-                    <p className="text-sm text-slate-400 mt-1">Add, edit and manage system users</p>
+                    <p className="text-sm text-slate-400 mt-1">
+                        {isSuperAdmin ? 'Add, edit and manage users across all hospitals' : 'Add, edit and manage system users'}
+                    </p>
                 </div>
                 <button
                     onClick={() => handleOpenModal()}
@@ -166,47 +191,57 @@ const UserManagement = () => {
                     <table className="w-full text-left text-sm border-collapse">
                         <thead>
                             <tr className="border-b border-slate-200 bg-slate-50 text-slate-400 font-bold text-xs uppercase tracking-wider">
-                                <th className="py-3 px-6">User</th>
-                                <th className="py-3 px-6">Email</th>
-                                <th className="py-3 px-6">Role</th>
-                                <th className="py-3 px-6">Status</th>
-                                <th className="py-3 px-6 text-right">Actions</th>
+                                <th className="py-3.5 px-6">User</th>
+                                <th className="py-3.5 px-6">Email</th>
+                                <th className="py-3.5 px-6">Role</th>
+                                {isSuperAdmin && <th className="py-3.5 px-6">Hospital</th>}
+                                <th className="py-3.5 px-6">Status</th>
+                                <th className="py-3.5 px-6 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {users.map((u) => (
                                 <tr key={u.id} className="hover:bg-slate-50/40 transition-all duration-200">
-                                    <td className="py-4 px-6">
+                                    <td className="py-4 px-6 align-middle">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm uppercase">
+                                            <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm uppercase shrink-0">
                                                 {u.first_name?.[0]}{u.last_name?.[0]}
                                             </div>
                                             <div>
-                                                <p className="font-bold text-slate-800">{u.first_name} {u.last_name}</p>
-                                                <p className="text-xs text-slate-400">@{u.username}</p>
+                                                <p className="font-bold text-slate-800 leading-tight">{u.first_name} {u.last_name}</p>
+                                                <p className="text-xs text-slate-400 mt-0.5">@{u.username}</p>
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="py-4 px-6">
+                                    <td className="py-4 px-6 align-middle">
                                         <span className="text-sm text-slate-600">{u.email}</span>
                                     </td>
-                                    <td className="py-4 px-6">
-                                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${getRoleBadgeColor(u.role)}`}>
+                                    <td className="py-4 px-6 align-middle">
+                                        <span className={`inline-flex items-center px-2.5 py-1 rounded border text-[10px] font-bold uppercase leading-none whitespace-nowrap ${getRoleBadgeColor(u.role)}`}>
                                             {u.role}
                                         </span>
                                     </td>
-                                    <td className="py-4 px-6">
-                                        {u.is_active ? (
-                                            <span className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-bold uppercase">
-                                                ● Active
-                                            </span>
-                                        ) : (
-                                            <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full text-[10px] font-bold uppercase">
-                                                ● Inactive
-                                            </span>
-                                        )}
+                                    {isSuperAdmin && (
+                                        <td className="py-4 px-6 align-middle">
+                                            <span className="text-xs text-slate-500">{u.hospital_name || 'Global'}</span>
+                                        </td>
+                                    )}
+                                    <td className="py-4 px-6 align-middle">
+                                        <div className="flex items-center">
+                                            {u.is_active ? (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[11px] font-bold uppercase leading-none whitespace-nowrap">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                                    Active
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full text-[11px] font-bold uppercase leading-none whitespace-nowrap">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>
+                                                    Inactive
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
-                                    <td className="py-4 px-6 text-right">
+                                    <td className="py-4 px-6 align-middle text-right">
                                         <div className="flex items-center justify-end gap-2">
                                             <button
                                                 onClick={() => handleOpenModal(u)}
@@ -321,6 +356,27 @@ const UserManagement = () => {
                                             required
                                         />
                                     </div>
+
+                                    {isSuperAdmin && (
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                                                Hospital {formData.role !== 'super_admin' && <span className="text-red-500">*</span>}
+                                            </label>
+                                            <select
+                                                value={formData.hospital_id}
+                                                onChange={(e) => setFormData(prev => ({ ...prev, hospital_id: e.target.value }))}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                                required={formData.role !== 'super_admin'}
+                                            >
+                                                <option value="" disabled>Select a hospital...</option>
+                                                {hospitals.map((h) => (
+                                                    <option key={h.id} value={h.id}>
+                                                        {h.name} ({h.code})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
                                 </>
                             )}
 
@@ -339,6 +395,7 @@ const UserManagement = () => {
                                     <option value="receptionist">Receptionist</option>
                                     <option value="cmo">CMO / Department Head</option>
                                     <option value="admin">Admin</option>
+                                    {isSuperAdmin && <option value="super_admin">Super Admin</option>}
                                 </select>
                             </div>
 

@@ -110,7 +110,7 @@ def assign_doctor(
             detail="Admission not found"
         )
 
-    # NEW CHECK 1: block assigning a doctor to a discharged admission
+    # BLOCK ASSIGNING TO DISCHARGED ADMISSION
     if admission.discharge_date is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -134,7 +134,7 @@ def assign_doctor(
             detail="Access denied — doctor belongs to a different hospital"
         )
 
-    # NEW CHECK 2: block duplicate active assignment of the same doctor to the same admission
+    # BLOCK DUPLICATE ACTIVE ASSIGNMENT
     existing_assignment = db.query(DoctorAssignment).filter(
         DoctorAssignment.admission_id == admission_id,
         DoctorAssignment.doctor_id == doctor_id,
@@ -156,6 +156,11 @@ def assign_doctor(
     db.add(assignment)
     db.commit()
     db.refresh(assignment)
+
+    # Fetch patient details for clean audit logging
+    patient = db.query(Patient).filter(Patient.id == admission.patient_id).first()
+    patient_name = f"{patient.first_name} {patient.last_name}" if patient else "Unknown"
+
     log_audit(
         db=db,
         user_id=current_user.id,
@@ -164,8 +169,11 @@ def assign_doctor(
         entity_id=assignment.id,
         old_values=None,
         new_values={
-            "admission_id": str(admission_id),
-            "doctor_id": str(doctor_id)
+            "doctor_id": str(doctor_id),
+            "doctor_name": f"Dr. {doctor.first_name} {doctor.last_name}",
+            "patient_id": str(admission.patient_id),
+            "patient_name": patient_name,
+            "admission_id": str(admission_id)
         },
         hospital_id=target_hospital_id
     )
@@ -201,16 +209,41 @@ def unassign_doctor(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied — assignment belongs to a different hospital"
             )
+
+    # Fetch doctor, admission, and patient info for audit details
+    doctor = db.query(User).filter(User.id == assignment.doctor_id).first()
+    doctor_name = f"Dr. {doctor.first_name} {doctor.last_name}" if doctor else "Unknown"
+
+    admission = db.query(Admission).filter(Admission.id == assignment.admission_id).first()
+    patient_name = "Unknown"
+    patient_id = None
+    if admission:
+        patient_id = str(admission.patient_id)
+        patient = db.query(Patient).filter(Patient.id == admission.patient_id).first()
+        if patient:
+            patient_name = f"{patient.first_name} {patient.last_name}"
+
     assignment.unassigned_at = datetime.now(timezone.utc)
     db.commit()
+
     log_audit(
         db=db,
         user_id=current_user.id,
         action="DOCTOR_UNASSIGNED",
         entity_name="doctor_assignments",
         entity_id=assignment.id,
-        old_values={"unassigned_at": None},
-        new_values={"unassigned_at": assignment.unassigned_at.isoformat()},
+        old_values={
+            "doctor_name": doctor_name,
+            "patient_name": patient_name,
+            "patient_id": patient_id,
+            "unassigned_at": None
+        },
+        new_values={
+            "doctor_name": doctor_name,
+            "patient_name": patient_name,
+            "patient_id": patient_id,
+            "unassigned_at": assignment.unassigned_at.isoformat()
+        },
         hospital_id=getattr(assignment, "hospital_id", None)
     )
     db.commit()

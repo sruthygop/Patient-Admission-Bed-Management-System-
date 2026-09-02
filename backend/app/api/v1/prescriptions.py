@@ -1,12 +1,14 @@
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from uuid import UUID
 from pydantic import BaseModel
 from app.core.database import get_db
 from app.models.models import Prescription, Admission, Patient, User
 from app.api.v1.auth import get_current_user
+from app.core.audit import log_audit
 
 router = APIRouter()
+
 
 class PrescriptionCreate(BaseModel):
     admission_id: str
@@ -46,15 +48,15 @@ def create_prescription(
     if not admission:
         raise HTTPException(status_code=404, detail="Admission not found")
 
-    # NEW CHECK: block prescribing to a discharged admission
     if admission.discharge_date is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot create a prescription for a discharged admission"
         )
 
-    # Verify admission belongs to current hospital
     check_hospital_access(current_user, getattr(admission, "hospital_id", None))
+
+    target_hospital_id = current_user.hospital_id or getattr(admission, "hospital_id", None)
 
     prescription = Prescription(
         admission_id=prescription_in.admission_id,
@@ -66,9 +68,29 @@ def create_prescription(
         duration=prescription_in.duration,
         instructions=prescription_in.instructions,
         is_active=True,
-        hospital_id=current_user.hospital_id
+        hospital_id=target_hospital_id
     )
     db.add(prescription)
+    db.flush()
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="PRESCRIPTION_CREATED",
+        entity_name="prescriptions",
+        entity_id=prescription.id,
+        old_values=None,
+        new_values={
+            "medicine_name": prescription.medicine_name,
+            "dosage": prescription.dosage,
+            "frequency": prescription.frequency,
+            "duration": prescription.duration,
+            "patient_id": str(prescription.patient_id),
+            "admission_id": str(prescription.admission_id)
+        },
+        hospital_id=target_hospital_id
+    )
+
     db.commit()
     db.refresh(prescription)
 
@@ -94,7 +116,6 @@ def get_prescriptions_by_admission(
         Prescription.admission_id == admission_id
     )
 
-    # Filter by hospital
     if current_user.role != "super_admin":
         query = query.filter(
             Prescription.hospital_id == current_user.hospital_id
@@ -129,7 +150,6 @@ def get_prescriptions_by_patient(
         Prescription.patient_id == patient_id
     )
 
-    # Filter by hospital
     if current_user.role != "super_admin":
         query = query.filter(
             Prescription.hospital_id == current_user.hospital_id
@@ -170,7 +190,6 @@ def deactivate_prescription(
         Prescription.id == prescription_id
     )
 
-    # Filter by hospital
     if current_user.role != "super_admin":
         query = query.filter(
             Prescription.hospital_id == current_user.hospital_id
@@ -182,6 +201,18 @@ def deactivate_prescription(
         raise HTTPException(status_code=404, detail="Prescription not found")
 
     prescription.is_active = False
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="PRESCRIPTION_DEACTIVATED",
+        entity_name="prescriptions",
+        entity_id=prescription.id,
+        old_values={"is_active": True},
+        new_values={"is_active": False},
+        hospital_id=prescription.hospital_id
+    )
+
     db.commit()
 
     return {"message": "Prescription deactivated successfully"}
