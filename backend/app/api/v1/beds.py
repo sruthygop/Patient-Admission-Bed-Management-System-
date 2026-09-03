@@ -86,7 +86,7 @@ def add_room(
             detail="Cannot add room to a ward in another hospital"
         )
 
-    return create_room(db, room_data, current_user.id)
+    return create_room(db, room_data, current_user.id, current_user.hospital_id)
 
 
 @router.get("/wards/{ward_id}/rooms", response_model=list[RoomResponse])
@@ -123,7 +123,7 @@ def add_bed(
 ):
     # Only admin can create beds
     check_role(current_user, ["admin"])
-    return create_bed(db, bed_data, current_user.id)
+    return create_bed(db, bed_data, current_user.id, current_user.hospital_id)
 
 
 @router.get("/beds", response_model=list[BedResponse])

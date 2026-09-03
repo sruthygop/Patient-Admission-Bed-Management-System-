@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, DateTime, Date, Text
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, DateTime, Date, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -81,6 +81,9 @@ class Patient(Base):
 
 class Ward(Base):
     __tablename__ = "wards"
+    __table_args__ = (
+        UniqueConstraint('name', 'hospital_id', name='wards_name_hospital_unique'),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     hospital_id = Column(UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True)
@@ -93,7 +96,6 @@ class Ward(Base):
     rooms = relationship("Room", back_populates="ward", cascade="all, delete-orphan")
     staff_assignments = relationship("StaffAssignment", back_populates="ward", cascade="all, delete-orphan")
     hospital = relationship("Hospital", back_populates="wards")
-
 
 class Room(Base):
     __tablename__ = "rooms"

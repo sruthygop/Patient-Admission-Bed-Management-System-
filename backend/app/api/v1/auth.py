@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.core.config import settings
-from app.models.models import User
+from app.models.models import User, Hospital
 from app.core.audit import log_audit
 
 router = APIRouter()
@@ -138,6 +138,8 @@ def update_profile(
     current_user.first_name = profile_data.first_name
     current_user.last_name = profile_data.last_name
 
+    hospital_name = current_user.hospital.name if current_user.hospital else "Global"
+
     log_audit(
         db=db,
         user_id=current_user.id,
@@ -147,7 +149,9 @@ def update_profile(
         old_values=old_values,
         new_values={
             "first_name": profile_data.first_name,
-            "last_name": profile_data.last_name
+            "last_name": profile_data.last_name,
+            "user_name": f"{current_user.first_name} {current_user.last_name} ({current_user.username})",
+            "hospital_name": hospital_name
         },
         hospital_id=current_user.hospital_id
     )
@@ -187,6 +191,8 @@ def change_password(
 
     current_user.password_hash = get_password_hash(password_data.new_password)
 
+    hospital_name = current_user.hospital.name if current_user.hospital else "Global"
+
     log_audit(
         db=db,
         user_id=current_user.id,
@@ -194,7 +200,12 @@ def change_password(
         entity_name="users",
         entity_id=current_user.id,
         old_values=None,
-        new_values={"status": "password_changed"},
+        new_values={
+            "status": "password_changed",
+            "username": current_user.username,
+            "user_name": f"{current_user.first_name} {current_user.last_name}",
+            "hospital_name": hospital_name
+        },
         hospital_id=current_user.hospital_id
     )
 
@@ -319,6 +330,12 @@ def create_user(
     db.add(new_user)
     db.flush()
 
+    hospital_obj = db.query(Hospital).filter(Hospital.id == target_hospital_id).first() if target_hospital_id else None
+    hospital_name = hospital_obj.name if hospital_obj else "Global"
+
+    performer_name = f"{current_user.first_name} {current_user.last_name} ({current_user.username})".strip()
+    target_user_fullname = f"{new_user.first_name} {new_user.last_name}".strip()
+
     log_audit(
         db=db,
         user_id=current_user.id,
@@ -332,7 +349,9 @@ def create_user(
             "role": new_user.role,
             "first_name": new_user.first_name,
             "last_name": new_user.last_name,
-            "hospital_id": str(target_hospital_id) if target_hospital_id else None
+            "target_user_name": target_user_fullname,
+            "performed_by_name": performer_name,
+            "hospital_name": hospital_name
         },
         hospital_id=target_hospital_id
     )
@@ -379,11 +398,15 @@ def update_user(
             detail="Cannot update users belonging to another hospital"
         )
 
+    hospital_name = user.hospital.name if user.hospital else "Global"
+
     old_values = {
         "first_name": user.first_name,
         "last_name": user.last_name,
         "role": user.role,
-        "is_active": user.is_active
+        "is_active": user.is_active,
+        "target_user_name": f"{user.first_name} {user.last_name}",
+        "hospital_name": hospital_name
     }
 
     if user_data.first_name is not None:
@@ -401,11 +424,17 @@ def update_user(
     if user_data.is_active is not None:
         user.is_active = user_data.is_active
 
+    performer_name = f"{current_user.first_name} {current_user.last_name} ({current_user.username})".strip()
+    target_user_fullname = f"{user.first_name} {user.last_name}".strip()
+
     new_values = {
         "first_name": user.first_name,
         "last_name": user.last_name,
         "role": user.role,
-        "is_active": user.is_active
+        "is_active": user.is_active,
+        "target_user_name": target_user_fullname,
+        "performed_by_name": performer_name,
+        "hospital_name": hospital_name
     }
 
     log_audit(
@@ -466,6 +495,10 @@ def admin_reset_password(
 
     user.password_hash = get_password_hash(reset_data.new_password)
 
+    hospital_name = user.hospital.name if user.hospital else "Global"
+    performer_name = f"{current_user.first_name} {current_user.last_name} ({current_user.username})".strip()
+    target_user_fullname = f"{user.first_name} {user.last_name}".strip()
+
     log_audit(
         db=db,
         user_id=current_user.id,
@@ -473,7 +506,12 @@ def admin_reset_password(
         entity_name="users",
         entity_id=user.id,
         old_values=None,
-        new_values={"reset_target_username": user.username},
+        new_values={
+            "reset_target_username": user.username,
+            "target_user_name": target_user_fullname,
+            "performed_by_name": performer_name,
+            "hospital_name": hospital_name
+        },
         hospital_id=user.hospital_id
     )
 

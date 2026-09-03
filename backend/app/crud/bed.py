@@ -1,5 +1,6 @@
 from uuid import UUID
 from typing import Optional, List
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from app.models.models import Ward, Room, Bed
 from app.schemas.bed import WardCreate, RoomCreate, BedCreate, BedStatusUpdate
@@ -13,6 +14,19 @@ def create_ward(
     user_id: UUID,
     hospital_id: Optional[UUID] = None
 ) -> Ward:
+    # Check if a ward with the same name already exists in this hospital
+    existing_ward_query = db.query(Ward).filter(Ward.name == ward_data.name)
+    if hospital_id:
+        existing_ward_query = existing_ward_query.filter(Ward.hospital_id == hospital_id)
+    else:
+        existing_ward_query = existing_ward_query.filter(Ward.hospital_id.is_(None))
+
+    if existing_ward_query.first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A ward named '{ward_data.name}' already exists for this hospital."
+        )
+
     ward = Ward(
         name=ward_data.name,
         type=ward_data.type,
@@ -22,6 +36,7 @@ def create_ward(
     db.add(ward)
     db.commit()
     db.refresh(ward)
+
     log_audit(
         db=db, 
         user_id=user_id, 
@@ -72,6 +87,18 @@ def create_room(
     user_id: UUID, 
     hospital_id: Optional[UUID] = None
 ) -> Room:
+    # Check if room number already exists in the same ward
+    existing_room = db.query(Room).filter(
+        Room.ward_id == room_data.ward_id,
+        Room.room_number == room_data.room_number
+    ).first()
+
+    if existing_room:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Room number '{room_data.room_number}' already exists in this ward."
+        )
+
     room = Room(
         ward_id=room_data.ward_id,
         room_number=room_data.room_number,
@@ -81,6 +108,7 @@ def create_room(
     db.add(room)
     db.commit()
     db.refresh(room)
+
     log_audit(
         db=db, 
         user_id=user_id, 
@@ -117,6 +145,37 @@ def create_bed(
     user_id: UUID, 
     hospital_id: Optional[UUID] = None
 ) -> Bed:
+    # Check if bed number already exists in the same room
+    existing_bed = db.query(Bed).filter(
+        Bed.room_id == bed_data.room_id,
+        Bed.bed_number == bed_data.bed_number
+    ).first()
+
+    if existing_bed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Bed number '{bed_data.bed_number}' already exists in this room."
+        )
+
+    # NEW CHECK: enforce ward capacity before adding another bed
+    room = db.query(Room).filter(Room.id == bed_data.room_id).first()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+
+    ward = db.query(Ward).filter(Ward.id == room.ward_id).first()
+    if ward:
+        current_bed_count = db.query(Bed).join(Room).filter(
+            Room.ward_id == ward.id
+        ).count()
+        if current_bed_count >= ward.capacity:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ward capacity reached ({ward.capacity} beds). Cannot add more beds to '{ward.name}'."
+            )
+
     bed = Bed(
         room_id=bed_data.room_id,
         bed_number=bed_data.bed_number,
@@ -126,6 +185,7 @@ def create_bed(
     db.add(bed)
     db.commit()
     db.refresh(bed)
+
     log_audit(
         db=db, 
         user_id=user_id, 

@@ -69,9 +69,16 @@ def create_patient(
     db.add(db_patient)
     db.flush()
 
+    # Fetch hospital name if available
+    hospital_name = None
+    if db_patient.hospital:
+        hospital_name = db_patient.hospital.name
+
     new_values = patient_in.model_dump()
     new_values["date_of_birth"] = str(new_values["date_of_birth"])
     new_values["hospital_id"] = str(hospital_id) if hospital_id else None
+    new_values["hospital_name"] = hospital_name
+    new_values["patient_name"] = f"{db_patient.first_name} {db_patient.last_name}"
 
     log_audit(
         db=db,
@@ -86,7 +93,6 @@ def create_patient(
     db.commit()
     db.refresh(db_patient)
     return db_patient
-
 
 def update_patient(
     db: Session,
