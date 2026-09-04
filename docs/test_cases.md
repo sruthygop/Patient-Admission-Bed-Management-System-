@@ -107,7 +107,7 @@
 
 | Test # | Test Case | Steps | Expected Result | Actual Result | Status |
 |---|---|---|---|---|---|
-| TC-051 | View audit logs as Admin | Login as admin, click Audit Logs | All system actions shown with details | Logs displayed correctly | Pass |
+| TC-051 | View audit logs as Admin | Login as admin, click Audit Logs | Hospital-scoped system actions shown with details | Logs displayed correctly | Pass |
 | TC-052 | View audit logs as Doctor | Login as doctor, check sidebar | Audit Logs not visible in sidebar | Menu item hidden | Pass |
 | TC-053 | View audit logs as Nurse | Login as nurse, check sidebar | Audit Logs not visible in sidebar | Menu item hidden | Pass |
 | TC-054 | View audit logs as Receptionist | Login as receptionist, check sidebar | Audit Logs not visible in sidebar | Menu item hidden | Pass |
@@ -115,6 +115,7 @@
 | TC-056 | Audit log after patient registration | Register a patient, check audit logs | PATIENT_REGISTERED entry appears | Log entry created | Pass |
 | TC-057 | Audit log after admission | Admit a patient, check audit logs | PATIENT_ADMITTED entry appears | Log entry created | Pass |
 | TC-058 | Audit log after discharge | Discharge a patient, check audit logs | PATIENT_DISCHARGED entry appears | Log entry created | Pass |
+| TC-058a| Global audit logs as Super Admin | Login as superadmin, view Audit Logs | Logs across all hospital tenants displayed | Cross-tenant logs visible | Pass |
 
 ---
 
@@ -160,7 +161,7 @@
 
 | Test # | Test Case | Steps | Expected Result | Actual Result | Status |
 |---|---|---|---|---|---|
-| TC-076 | View all users as Admin | Click User Management in sidebar | All users listed with roles and status | Users displayed | Pass |
+| TC-076 | View all users as Admin | Click User Management in sidebar | All users in current hospital listed with roles | Users displayed | Pass |
 | TC-077 | Add new doctor | Click Add New User, fill details, select Doctor role | New doctor appears in list and can login | User created successfully | Pass |
 | TC-078 | Add new nurse | Click Add New User, fill details, select Nurse role | New nurse appears in list and can login | User created successfully | Pass |
 | TC-079 | Edit user details | Click edit icon, update name or role, click Save | User details updated | Update successful | Pass |
@@ -184,6 +185,27 @@
 
 ---
 
+
+
+## 14. Multi-Tenant & Super Admin Tests
+
+| Test # | Test Case | Steps | Expected Result | Actual Result | Status |
+|---|---|---|---|---|---|
+| TC-090 | Login as Super Admin | Login with superadmin@pabms.com | Super Admin dashboard loads with global view | Global dashboard loaded | Pass |
+| TC-091 | View Hospitals page | Click Hospitals in sidebar as Super Admin | All registered hospital tenants listed | Hospital list displayed | Pass |
+| TC-092 | Onboard new hospital tenant | Fill hospital name, code, contact info; click Create Hospital | New hospital created successfully | Hospital onboarded | Pass |
+| TC-093 | Tenant Data Isolation — Patients | Register patient in Hospital A; login as Admin B | Patient from Hospital A not visible in Hospital B | Data isolation confirmed | Pass |
+| TC-094 | Tenant Data Isolation — Wards/Beds | Create ward in Hospital A; check Hospital B bed layout | Ward/beds from Hospital A not visible in Hospital B | Layout isolated | Pass |
+| TC-095 | Non-Super Admin access to Hospitals page | Login as Admin A, navigate to /hospitals directly | Redirected or shown Access Denied | Access blocked | Pass |
+| TC-096 | Non-Super Admin calling Hospitals API | Call POST /api/v1/hospitals as Admin A | 403 Forbidden returned | 403 status returned | Pass |
+| TC-097 | Global Stats Aggregation | Check Super Admin dashboard stats | Counts reflect sum across all active tenants | Aggregate stats correct | Pass |
+| TC-098 | Global Multi-Hospital Overview | Navigate to Super Admin Dashboard page (`/super-admin-dashboard`) | System-wide hospital overview displaying aggregate stats and tenant status | Global overview displayed | Pass |
+| TC-099 | Super Admin create hospital admin | Create new Admin user assigned to newly created hospital | Admin successfully created and bound to new tenant | Tenant admin onboarded | Pass |
+
+
+
+---
+
 ## Test Summary
 
 | Category | Total Tests | Passed | Failed |
@@ -195,20 +217,21 @@
 | Doctor Assignment | 6 | 6 | 0 |
 | Staff Assignment | 6 | 6 | 0 |
 | Dashboard | 5 | 5 | 0 |
-| Audit Logs | 8 | 8 | 0 |
+| Audit Logs | 9 | 9 | 0 |
 | Profile Settings | 6 | 6 | 0 |
 | Prescriptions | 6 | 6 | 0 |
 | Analytics | 5 | 5 | 0 |
 | User Management | 8 | 8 | 0 |
 | Security | 6 | 6 | 0 |
-| **Total** | **89** | **89** | **0** |
+| Multi-Tenant & Super Admin | 10 | 10 | 0 |
+| **Total** | **99** | **99** | **0** |
 
 ---
 
 ## Notes
 
-- All tests were performed manually using the web UI and Swagger API documentation
-- Backend was running on http://localhost:8000
-- Frontend was running on http://localhost:5173
-- Database: PostgreSQL (project_db)
+- All tests were performed manually using the web UI and Swagger API documentation (`/docs`)
+- Backend was running on `http://localhost:8000`
+- Frontend was running on `http://localhost:5173`
+- Database: PostgreSQL (`project_db`)
 - Testing performed by: Sruthy, Software Engineering Intern, Settlement Sense — 2026

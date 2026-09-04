@@ -6,304 +6,329 @@
 
 ## 1. Introduction
 
-The Patient Admission & Bed Management System (PABMS) is a web-based hospital management system developed for Settlement Sense. It enables hospital staff to manage patient registrations, bed allocations, admissions, discharges, doctor assignments, and staff scheduling through a simple and professional interface.
+The Patient Admission & Bed Management System (PABMS) is a web-based, multi-tenant hospital management platform developed for Settlement Sense. 
+It enables healthcare facilities to manage patient registrations, bed allocations, ward admissions, discharges, doctor assignments, 
+clinical prescriptions, and staff scheduling through a secure and professional interface.
+Designed with **multi-tenant architecture**, PABMS ensures complete data isolation between different hospital 
+organizations while providing executive-level oversight for Super Administrators.
 
 ---
 
 ## 2. Accessing the System
 
 ### Login
-1. Open your browser and go to the system URL
-2. Enter your **Email Address** (e.g. `admin@pabms.com`)
-3. Enter your **Password**
-4. Click **Login**
+
+1. Open your web browser and navigate to the system URL (`http://localhost:5173` or your designated domain).
+2. Enter your **Email Address** (e.g., `admin@pabms.com` or `superadmin@pabms.com`).
+3. Enter your **Password**.
+4. Click **Login**.
+
+### Hospital Tenant Isolation
+Every user account (except Super Admin) is bound to a specific hospital tenant (e.g., *Settlement Sense Hospital* or *Metro Care Hospital*). 
+Once logged in, all data displayed—patients, beds, admissions, and audit logs—is strictly isolated to your assigned hospital.
 
 ### Forgot Password
-If you forget your password, click **Forgot Password?** on the login page and contact your system administrator to reset it.
+If you forget your password, click **Forgot Password?** on the login page and contact your local hospital administrator or system administrator to reset it.
 
 ### Session Expiry
-Your session will automatically expire after 60 minutes of inactivity. You will be redirected to the login page — simply log in again to continue.
+For security compliance, your session automatically expires after **60 minutes** of inactivity. You will be redirected to the login page—simply log in
+again to resume your workspace.
 
 ---
 
-## 3. User Roles
+## 3. User Roles & Access Control
 
-The system has 5 roles with different access levels:
+The system implements strict Role-Based Access Control (RBAC) across 6 distinct user roles:
 
-| Role | Description |
-|---|---|
-| Admin | Full access to all features including user management and audit logs |
-| CMO / Department Head | Can register patients, admit/discharge, bed status upadte assign doctors, schedule staff, write prescriptions |
-| Doctor | Can view patients, admit and discharge patients, write and manage prescriptions |
-| Nurse | Can register patients, admit/discharge patients, assign doctors,update bed status |
-| Receptionist | Can register and view patients only |
+| Role | Scope | Key Capabilities & Access Level |
+|---|---|---|
+| **Super Admin** | Global (Platform) | Full platform administration, hospital tenant onboarding, global user management, system-wide analytics, cross-tenant audit logs |
+| **Admin** | Hospital Tenant | Complete administrative control over assigned hospital, local user management, bed/ward configuration, local audit logs |
+| **CMO / Dept Head** | Hospital Tenant | Clinical leadership: register patients, admit/discharge, assign doctors, schedule ward staff, issue digital prescriptions |
+| **Doctor** | Hospital Tenant | Direct patient care: view patients, process admissions & discharges, write and deactivate prescriptions, view doctor assignments |
+| **Nurse** | Hospital Tenant | Ward management: register patients, admit/discharge, assign doctors, update bed maintenance statuses |
+| **Receptionist** | Hospital Tenant | Front desk operations: register and view patient records only |
 
 ---
 
 ## 4. Dashboard
 
-The Dashboard gives a real-time overview of the hospital:
+The Dashboard provides real-time operational metrics customized to your user role:
 
-- **Occupancy Rate** — percentage of beds currently occupied
-- **Active Admissions** — number of patients currently admitted
-- **Available Beds** — number of beds ready for new patients
-- **Total Patients** — total registered patients in the system
-- **Admission Trends** — bar chart showing daily admissions vs discharges for the last 7 days
-- **Ward Occupancy** — breakdown of bed usage per ward
-- **Recent Patient Admissions** — latest admitted and discharged patients
+### Local Hospital Dashboard (Admin, CMO, Doctor, Nurse, Receptionist)
+
+- **Occupancy Rate** — Percentage of hospital beds currently occupied.
+- **Active Admissions** — Number of patients currently admitted in wards.
+- **Available Beds** — Number of beds ready for new patient admissions.
+- **Total Patients** — Total registered patient records in your hospital tenant.
+- **Admission Trends** — Bar chart showing daily admissions vs. discharges over the last 7 days.
+- **Ward Occupancy** — Visual breakdown of bed utilization per ward.
+- **Recent Patient Admissions** — Stream of recent admission and discharge activities with live status badges.
+
+### Global Executive Dashboard (Super Admin Only)
+
+- **Aggregate System Metrics** — System-wide summary of total onboarded hospitals, global active admissions, total platform beds, and registered users across all tenants.
+- **Hospital Tenant Directory Summary** — Operational health and status of all registered hospital facilities.
 
 ---
 
 ## 5. Patient Management
 
 ### Registering a New Patient
-1. Click **Patients** in the sidebar
-2. Click **Register Patient** button (top right)
-3. Fill in the patient details:
-   - First Name and Last Name
-   - Date of Birth
-   - Gender
+1. Click **Patients** in the sidebar navigation.
+2. Click the **Register Patient** button (top right).
+3. Complete the patient demographic details:
+   - First Name & Last Name
+   - Date of Birth & Gender
    - Blood Group
-   - Phone Number
+   - Primary Phone Number
    - Email Address (optional)
    - Residential Address
-   - Emergency Contact Name and Phone
-4. Click **Register Patient** to save
+   - Emergency Contact Name & Phone
+4. Click **Register Patient** to save.
 
-### Who can register patients:
-- Admin, CMO, Nurse, Receptionist — ALLOW
-- Doctor — DENY
+**Who can register patients:**
+- Super Admin, Admin, CMO, Nurse, Receptionist — **ALLOWED**
+- Doctor — **DENIED**
 
-### Searching for a Patient
-- Use the **Search** bar to search by first or last name
-- Use the **Filter by phone** field to search by phone number
+### Searching & Filtering Patients
 
-### Editing a Patient
-1. Find the patient in the list
-2. Click the **edit (pencil) icon** on the right
-3. Update the required fields
-4. Click **Save Changes**
+- **Search Bar:** Search by patient first name or last name in real time.
+- **Phone Filter:** Filter records directly by primary contact number.
 
-### Deleting a Patient
-- Only **Admin** can delete patients
-- Click the **delete (trash) icon** next to the patient
-- Confirm the deletion
-- Note: Patient records are soft-deleted — they remain in the database but are hidden from the list
+### Editing Patient Records
+
+1. Locate the patient in the registered list.
+2. Click the **Edit (pencil)** icon on the right action column.
+3. Update necessary demographic or emergency contact details.
+4. Click **Save Changes**.
+
+### Deleting a Patient Record
+- Only **Super Admin** and **Admin** roles can delete patient records.
+- Click the **Delete (trash)** icon next to the patient and confirm.
+- *Note:* Patient records undergo **soft-deletion**—they are removed from UI views but safely retained in the database for compliance and audit auditing.
 
 ---
 
-## 6. Bed and Admission Management
+## 6. Bed & Admission Management
 
 ### Viewing Wards and Beds
-1. Click **Bed & Admissions** in the sidebar
-2. Click on any ward tab to view its rooms and beds
-3. Each bed shows its current status:
-   - **Available** — ready for a new patient
-   - **Occupied** — patient currently admitted
-   - **Maintenance** — bed is being cleaned or repaired
+1. Click **Bed & Admissions** in the sidebar.
+2. Select any ward tab (e.g., *ICU*, *General Ward*, *Pediatrics*) to view rooms and individual beds.
+3. Bed color codes reflect real-time operational status:
+   - **Available (Green)** — Cleaned and ready for immediate patient admission.
+   - **Occupied (Red)** — Patient currently admitted.
+   - **Maintenance (Yellow)** — Bed undergoing cleaning, sterilization, or repair.
 
 ### Admitting a Patient
-1. Go to **Bed & Admissions**
-2. Find an **Available** bed
-3. Click **Admit** on the bed card
-4. Select the patient from the dropdown
-5. Enter the reason for admission
-6. Click **Confirm Admission**
-7. After admission, go to **Doctor Assignments** page to assign a doctor
 
-### Who can admit patients:
-- Admin, CMO, Doctor, Nurse — ALLOW
-- Receptionist — DENY
+1. Navigate to **Bed & Admissions**.
+2. Locate an **Available** bed in the designated ward.
+3. Click **Admit** on the bed card.
+4. Select the patient from the dropdown (already admitted patients are automatically disabled).
+5. Enter the admission reason / clinical summary.
+6. Click **Confirm Admission**. Bed status automatically switches to *Occupied*.
+7. *Next Step:* Proceed to **Doctor Assignments** to assign attending physicians.
+
+**Who can admit patients:**
+- Super Admin, Admin, CMO, Doctor, Nurse — **ALLOWED**
+- Receptionist — **DENIED**
 
 ### Discharging a Patient
-1. Find the **Occupied** bed
-2. Click **Discharge** on the bed card
-3. Review the patient and admission details
-4. Select the post-discharge bed status (Admin, CMO, Nurse only):
-   - **Maintenance** (recommended for cleaning)
-   - **Available** (immediately ready)
-5. Click **Confirm Discharge**
 
-Note: When a Doctor discharges a patient, bed is automatically set to Maintenance.
+1. Locate the **Occupied** bed card.
+2. Click **Discharge**.
+3. Review patient admission summary.
+4. Select post-discharge bed status (*Admin, CMO, Nurse*):
+   - **Maintenance** (Recommended: flags bed for cleaning).
+   - **Available** (Immediately ready for next patient).
+5. Click **Confirm Discharge**.
 
-### Setting a Bed to Available
-If a bed is in **Maintenance** and is ready for use (Admin, CMO, Nurse only):
-1. Find the bed
-2. Click **Set Available**
+*Note:* When a **Doctor** discharges a patient, the system automatically transitions the bed status to **Maintenance** to enforce sanitation protocols.
 
-### Adding Wards, Rooms, and Beds (Admin only)
-1. Go to **Bed & Admissions**
-2. Click **Add Ward**, **Add Room**, or **Add Bed** buttons at the top
-3. Fill in the required details
-4. Click the create button
+### Resetting Bed Status After Maintenance
+
+When cleaning or repair is finished (*Admin, CMO, Nurse*):
+1. Locate the bed in **Maintenance** status.
+2. Click **Set Available** to restore the bed to service.
+
+### Ward, Room, and Bed Configuration (Admin & Super Admin Only)
+1. Go to **Bed & Admissions**.
+2. Use **Add Ward**, **Add Room**, or **Add Bed** buttons at the top header.
+3. Fill in ward codes, room numbers, and bed identifiers.
+4. Click **Create**.
 
 ---
 
 ## 7. Doctor Assignments
 
-### Viewing Doctor Assignments
-1. Click **Doctor Assignments** in the sidebar
-2. All active admissions are listed with their assigned doctors
+### Viewing Assignments
 
-### Assigning a Doctor (After Admission)
-1. Find the newly admitted patient
-2. Click **Add Doctor**
-3. Select the doctor from the dropdown
-4. Add notes (optional)
-5. Click **Assign Doctor**
+1. Click **Doctor Assignments** in the sidebar.
+2. View all active ward admissions along with their primary assigned physicians.
 
-### Reassigning a Doctor (When doctor is busy or on leave)
-1. Find the current doctor assignment
-2. Click **Unassign** to remove current doctor
-3. Click **Add Doctor** to assign a new doctor
+### Assigning an Attending Doctor
 
-### Who can assign doctors:
-- Admin, CMO, Nurse — ALLOW
-- Doctor, Receptionist — DENY
+1. Find the newly admitted patient record.
+2. Click **Add Doctor**.
+3. Select an active physician from the dropdown menu.
+4. Add clinical handover notes (optional).
+5. Click **Assign Doctor**.
 
----
+### Reassigning Doctors
 
-## 8. Staff Assignments
+1. Locate the active patient assignment.
+2. Click **Unassign** to detach the current physician.
+3. Click **Add Doctor** to select a new attending physician.
 
-### Viewing Staff Assignments
-1. Click **Staff Assignments** in the sidebar
-2. All current staff ward assignments are listed
+**Who can assign/unassign doctors:**
 
-### Assigning Staff to a Ward (Admin and CMO only)
-1. Click **Assign Staff** button
-2. Select the ward
-3. Select the staff member
-4. Set the shift start and end time
-5. Click **Assign Staff**
+- Super Admin, Admin, CMO, Nurse — **ALLOWED**
 
-### Removing a Staff Assignment (Admin and CMO only)
-1. Find the assignment in the list
-2. Click the **delete (trash) icon**
-3. Confirm the removal
+- Doctor, Receptionist — **DENIED** (Doctors have view-only access).
 
 ---
 
-## 9. Audit Logs (Admin only)
+## 8. Staff Ward Scheduling
 
-1. Click **Audit Logs** in the sidebar
-2. View the complete history of all system actions
-3. Each log entry shows:
-   - Action performed (e.g. PATIENT_ADMITTED, PATIENT_DELETED)
-   - Entity affected
-   - Who performed the action
-   - Old and new values
-   - Timestamp
+### Viewing Staff Schedules
 
----
+1. Click **Staff Assignments** in the sidebar.
+2. Review nurse and clinical staff ward allocations and shift timings.
 
-## 10. Analytics Hub
+### Scheduling Staff to Wards (Admin & CMO Only)
 
-The Analytics Hub provides detailed clinical and operational insights:
+1. Click **Assign Staff**.
+2. Select the target Ward.
+3. Select the active staff member from the dropdown.
+4. Define shift start time and end time.
+5. Click **Assign Staff**.
 
-- **Total Patients** — total registered patients in the system
-- **Total Admissions** — all time admission count
-- **Total Discharged** — successfully discharged patients
-- **Average Length of Stay** — average days patients stay
-- **Monthly Admission Trends** — line chart showing admissions vs discharges over last 6 months
-- **Gender Distribution** — pie chart showing patient gender breakdown
-- **Blood Group Distribution** — bar chart showing patient blood group breakdown
-- **Ward Performance** — occupancy rate comparison across all wards
-
-All roles can access the Analytics Hub.
+### Removing Staff Schedule
+1. Locate the staff shift entry.
+2. Click the **Delete (trash)** icon and confirm removal.
 
 ---
 
-## 11. Digital Prescriptions
+## 9. Digital Prescriptions
 
 ### Viewing Prescriptions
-1. Click **Prescriptions** in the sidebar
-2. Select a patient from the active patients list on the left
-3. View all prescriptions for that patient on the right
 
-### Writing a Prescription (Doctor and CMO only)
-1. Select the admitted patient from the left panel
-2. Click **Add Prescription** button
-3. Fill in the prescription details:
-   - Medicine Name (e.g. Paracetamol)
-   - Dosage (e.g. 500mg)
-   - Frequency (e.g. Twice daily)
-   - Duration (e.g. 5 days)
-   - Instructions (e.g. Take after food)
-4. Click **Add Prescription** to save
+1. Click **Prescriptions** in the sidebar.
+2. Select an admitted patient from the active roster on the left panel.
+3. View active and historical medical prescriptions on the right workspace panel.
 
-### Deactivating a Prescription (Doctor and CMO only)
-1. Find the prescription in the list
-2. Click **Deactivate** next to the active prescription
-3. Confirm the action — prescription status changes to Inactive
+### Issuing a New Prescription (Doctor & CMO Only)
 
----
+1. Select the admitted patient.
+2. Click **Add Prescription**.
+3. Fill in medication details:
+   - **Medicine Name** (e.g., Amoxicillin)
+   - **Dosage** (e.g., 500mg)
+   - **Frequency** (e.g., Thrice daily after meals)
+   - **Duration** (e.g., 7 days)
+   - **Special Instructions** (e.g., Complete full course)
+4. Click **Add Prescription** to log into the patient's record.
 
-## 12. User Management (Admin only)
+### Deactivating Prescriptions (Doctor & CMO Only)
 
-### Viewing All Users
-1. Click **User Management** in the sidebar
-2. All system users are listed with their role and status
-
-### Adding a New User
-1. Click **Add New User** button
-2. Fill in the user details:
-   - First Name and Last Name
-   - Username (unique)
-   - Email Address (unique)
-   - Password (minimum 8 characters)
-   - Role (Doctor, Nurse, Receptionist, CMO, or Admin)
-3. Click **Create User** — the new user can login immediately
-
-### Editing a User
-1. Find the user in the list
-2. Click the **edit (pencil) icon**
-3. Update First Name, Last Name, or Role
-4. Click **Save Changes**
-
-### Activating or Deactivating a User
-1. Find the user in the list
-2. Click **Deactivate** to disable their account
-3. Click **Activate** to re-enable their account
-4. Deactivated users cannot login and will not appear in any dropdowns
+1. Locate the active prescription in the patient's record.
+2. Click **Deactivate**.
+3. Confirm deactivation—status changes to *Inactive*, stopping active treatment administration.
 
 ---
 
-## 13. Profile Settings
+## 10. Audit Logs
 
-### Updating Your Name
-1. Click your name in the sidebar
-2. Click **Profile Settings**
-3. Update your First Name and Last Name
-4. Click **Save Changes**
+Audit logging maintains an immutable trail of system actions for clinical governance and security monitoring.
+
+1. Click **Audit Logs** in the sidebar.
+2. Each log entry records:
+   - **Action Type** (e.g., `PATIENT_REGISTERED`, `PATIENT_ADMITTED`, `PATIENT_DISCHARGED`, `USER_DEACTIVATED`)
+   - **Target Entity ID & Type**
+   - **Performed By** (User ID & Email)
+   - **State Delta** (Previous state vs. Updated state)
+   - **Timestamp**
+
+**Audit Access Scope:**
+- **Local Admin:** Views audit logs generated strictly within their hospital tenant.
+- **Super Admin:** Accesses global audit logs across all registered hospital tenants.
+- **Doctors, Nurses, Receptionists:** Access restricted.
+
+---
+
+## 11. Analytics Hub
+
+The Analytics Hub provides real-time clinical and capacity analytics:
+
+- **Total Patients & Admissions** — Aggregate historic metrics.
+- **Average Length of Stay (ALOS)** — Average inpatient duration in days.
+- **Monthly Admission Trends** — 6-month longitudinal line chart (Admissions vs. Discharges).
+- **Gender & Blood Group Distribution** — Demographic pie and bar charts.
+- **Ward Performance & Occupancy** — Comparative utilization metrics per ward.
+
+*Access:* Available to all authenticated users within their hospital scope.
+
+---
+
+## 12. User Management
+
+### Local User Management (Admin Only)
+
+Hospital Admins manage staff accounts within their hospital tenant:
+1. Click **User Management** in the sidebar.
+2. View all staff accounts, active roles, and account statuses.
+3. Click **Add New User** to onboard new Doctors, Nurses, Receptionists, or CMOs.
+4. Edit staff details or toggle **Activate / Deactivate** account status.
+   - *Deactivated users are immediately blocked from logging in and removed from assignment dropdowns.*
+
+---
+
+## 13. Hospital Tenant Onboarding (Super Admin Only)
+
+Super Administrators manage platform multi-tenancy via the dedicated **Hospitals** portal:
+
+1. Log in with Super Admin credentials (`superadmin@pabms.com`).
+2. Click **Hospitals** in the sidebar navigation (`/hospitals`).
+3. View all onboarded hospital facilities across the platform.
+4. Click **Create Hospital**:
+   - Enter **Hospital Name** (e.g., *Metropolitan Health Center*)
+   - Enter Unique **Hospital Code** (e.g., `MHC-01`)
+   - Enter Contact Email and Address details.
+5. Click **Submit** to instantiate the new tenant.
+6. Provision a new local **Admin** account for the onboarded hospital via User Management.
+
+---
+
+## 14. Profile & Account Settings
+
+### Updating Profile Details
+1. Click your account profile name in the bottom sidebar.
+2. Select **Profile Settings**.
+3. Update First Name or Last Name, then click **Save Changes**.
 
 ### Changing Your Password
-1. Click your name in the sidebar
-2. Click **Profile Settings**
-3. Scroll to **Change Password** section
-4. Enter your current password
-5. Enter and confirm your new password (minimum 8 characters)
-6. Click **Change Password**
 
-### Admin — Reset Another User's Password
-1. Open **Profile Settings** (as admin)
-2. Scroll to **Admin — Reset User Password** section
-3. Select the user from the dropdown
-4. Enter the new password
-5. Click **Reset Password**
+1. In **Profile Settings**, navigate to **Change Password**.
+2. Enter your **Current Password**.
+3. Enter and confirm your **New Password** (minimum 8 characters).
+4. Click **Change Password**.
+
+### Admin Password Reset
+Hospital Admins and Super Admins can force-reset passwords for accounts under their administrative scope via 
+the **Admin — Reset User Password** tool located within Profile Settings.
 
 ---
 
-## 14. Signing Out
+## 15. Signing Out
 
-Click **Sign Out** at the bottom of the sidebar to securely log out of the system.
+To terminate your session securely, click **Sign Out** at the bottom of the left sidebar navigation. 
+Always log out when stepping away from your workstation to maintain HIPAA/data privacy compliance.
 
----
-
-## 15. Tips
+## 16. Tips
 
 - Always log out when leaving your workstation
 - Change your password regularly for security
 - Contact your system administrator if you are locked out
-- The dashboard auto-refreshes — use the refresh button for latest data
 - Deactivated users cannot login — contact admin to reactivate
 - Doctor assignment should be done immediately after admitting a patient through the Doctor Assignments page
