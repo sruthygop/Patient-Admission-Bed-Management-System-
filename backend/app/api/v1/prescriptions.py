@@ -1,4 +1,5 @@
 from uuid import UUID
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -11,13 +12,13 @@ router = APIRouter()
 
 
 class PrescriptionCreate(BaseModel):
-    admission_id: str
-    patient_id: str
+    admission_id: UUID
+    patient_id: UUID
     medicine_name: str
     dosage: str
     frequency: str
     duration: str
-    instructions: str = None
+    instructions: Optional[str] = None
 
 
 def check_hospital_access(current_user: User, hospital_id):
@@ -108,7 +109,7 @@ def create_prescription(
 
 @router.get("/admission/{admission_id}")
 def get_prescriptions_by_admission(
-    admission_id: str,
+    admission_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -142,7 +143,7 @@ def get_prescriptions_by_admission(
 
 @router.get("/patient/{patient_id}")
 def get_prescriptions_by_patient(
-    patient_id: str,
+    patient_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -176,7 +177,7 @@ def get_prescriptions_by_patient(
 
 @router.delete("/{prescription_id}")
 def deactivate_prescription(
-    prescription_id: str,
+    prescription_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

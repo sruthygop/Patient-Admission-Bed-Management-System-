@@ -15,6 +15,13 @@ class PatientBase(BaseModel):
     emergency_contact_phone: str = Field(..., max_length=15)
     blood_group: Optional[str] = Field(None, max_length=5)
 
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_dob_not_future(cls, v: date) -> date:
+        if v > date.today():
+            raise ValueError("Date of birth cannot be in the future")
+        return v
+
     @field_validator('gender')
     @classmethod
     def validate_gender(cls, v: str) -> str:
@@ -47,6 +54,15 @@ class PatientUpdate(BaseModel):
     emergency_contact_name: Optional[str] = Field(None, max_length=100)
     emergency_contact_phone: Optional[str] = Field(None, max_length=15)
     blood_group: Optional[str] = None
+
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_dob_not_future(cls, v: Optional[date]) -> Optional[date]:
+        if v is None:
+            return v
+        if v > date.today():
+            raise ValueError("Date of birth cannot be in the future")
+        return v
 
     @field_validator('gender')
     @classmethod

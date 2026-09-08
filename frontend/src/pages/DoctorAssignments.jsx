@@ -47,7 +47,11 @@ const DoctorAssignments = () => {
         setError('');
         setSuccess('');
         try {
-            await api.post(`/api/v1/doctor-assignments/?admission_id=${selectedAdmission.id}&doctor_id=${selectedDoctorId}&notes=${encodeURIComponent(notes)}`);
+            await api.post('/api/v1/doctor-assignments/', {
+                admission_id: selectedAdmission.id,
+                doctor_id: selectedDoctorId,
+                notes: notes || null,
+            });
             setSuccess('Doctor assigned successfully!');
             fetchData();
             setIsModalOpen(false);

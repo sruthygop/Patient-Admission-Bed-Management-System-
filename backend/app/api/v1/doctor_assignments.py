@@ -1,13 +1,21 @@
 from uuid import UUID
+from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
 from app.models.models import User, DoctorAssignment, Admission, Patient
 from app.core.audit import log_audit
 
 router = APIRouter()
+
+
+class DoctorAssignmentCreate(BaseModel):
+    admission_id: UUID
+    doctor_id: UUID
+    notes: Optional[str] = None
 
 
 def check_role(current_user: User, allowed_roles: list):
@@ -96,14 +104,12 @@ def get_doctor_assignments(
 
 @router.post("/")
 def assign_doctor(
-    admission_id: UUID,
-    doctor_id: UUID,
-    notes: str = None,
+    payload: DoctorAssignmentCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     check_role(current_user, ["admin", "cmo", "nurse"])
-    admission = db.query(Admission).filter(Admission.id == admission_id).first()
+    admission = db.query(Admission).filter(Admission.id == payload.admission_id).first()
     if not admission:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -119,7 +125,7 @@ def assign_doctor(
 
     verify_admission_hospital_access(admission, current_user)
     doctor = db.query(User).filter(
-        User.id == doctor_id,
+        User.id == payload.doctor_id,
         User.role == "doctor",
         User.is_active == True
     ).first()
@@ -136,8 +142,8 @@ def assign_doctor(
 
     # BLOCK DUPLICATE ACTIVE ASSIGNMENT
     existing_assignment = db.query(DoctorAssignment).filter(
-        DoctorAssignment.admission_id == admission_id,
-        DoctorAssignment.doctor_id == doctor_id,
+        DoctorAssignment.admission_id == payload.admission_id,
+        DoctorAssignment.doctor_id == payload.doctor_id,
         DoctorAssignment.unassigned_at == None
     ).first()
     if existing_assignment:
@@ -148,10 +154,10 @@ def assign_doctor(
 
     target_hospital_id = current_user.hospital_id or getattr(doctor, "hospital_id", None)
     assignment = DoctorAssignment(
-        admission_id=admission_id,
-        doctor_id=doctor_id,
+        admission_id=payload.admission_id,
+        doctor_id=payload.doctor_id,
         hospital_id=target_hospital_id,
-        notes=notes or "Assigned by staff"
+        notes=payload.notes or "Assigned by staff"
     )
     db.add(assignment)
     db.commit()
@@ -169,11 +175,11 @@ def assign_doctor(
         entity_id=assignment.id,
         old_values=None,
         new_values={
-            "doctor_id": str(doctor_id),
+            "doctor_id": str(payload.doctor_id),
             "doctor_name": f"Dr. {doctor.first_name} {doctor.last_name}",
             "patient_id": str(admission.patient_id),
             "patient_name": patient_name,
-            "admission_id": str(admission_id)
+            "admission_id": str(payload.admission_id)
         },
         hospital_id=target_hospital_id
     )

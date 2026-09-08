@@ -1,92 +1,108 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
-  Search, Plus, Edit2, Trash2, X, Loader2, AlertCircle, CheckCircle2, Users,
-  User, Phone, Mail, MapPin, Heart, Calendar, Shield
+  Search, Plus, Edit2, Trash2, X, Loader2, AlertCircle, CheckCircle2,
+  Users, User, Phone, Mail, MapPin, Heart, Calendar, Shield
 } from 'lucide-react';
+
+const INITIAL_FORM_DATA = {
+  first_name: '',
+  last_name: '',
+  date_of_birth: '',
+  gender: 'male',
+  phone_number: '',
+  email: '',
+  address: '',
+  emergency_contact_name: '',
+  emergency_contact_phone: '',
+  blood_group: '',
+};
+
+const ALLOWED_ROLES = ['admin', 'cmo', 'nurse', 'receptionist'];
+
+const getErrorMessage = (err, fallback) => {
+  const detail = err.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail.length > 0) return detail[0].msg || fallback;
+  return fallback;
+};
 
 const Patients = () => {
   const { user } = useAuth();
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [phoneFilter, setPhoneFilter] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
+  const [formData, setFormData] = useState(INITIAL_FORM_DATA);
 
-  const [formData, setFormData] = useState({
-    first_name: '',
-    last_name: '',
-    date_of_birth: '',
-    gender: 'male',
-    phone_number: '',
-    email: '',
-    address: '',
-    emergency_contact_name: '',
-    emergency_contact_phone: '',
-    blood_group: '',
-  });
+  const canEdit = ALLOWED_ROLES.includes(user?.role);
+  const canDelete = user?.role === 'admin';
 
-  const fetchPatients = async () => {
+  const fetchPatients = useCallback(async (isMounted = true) => {
+    setLoading(true);
     try {
       const response = await api.get('/api/v1/patients/', {
         params: {
-          search: searchTerm || undefined,
-          phone: phoneFilter || undefined,
+          search: searchTerm.trim() || undefined,
+          phone: phoneFilter.trim() || undefined,
         }
       });
-      setPatients(response.data);
+      if (isMounted) setPatients(response.data);
     } catch (err) {
       console.error('Failed to load patients list:', err);
-      setError('Could not retrieve patient records.');
+      if (isMounted) setError('Could not retrieve patient records.');
     } finally {
-      setLoading(false);
+      if (isMounted) setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchPatients();
   }, [searchTerm, phoneFilter]);
 
+  // Debounced fetch on search or filter change
+  useEffect(() => {
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      fetchPatients(isMounted);
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [fetchPatients]);
+
   const handleOpenModal = (patient = null) => {
+    setError('');
     if (patient) {
       setEditingPatient(patient);
       setFormData({
-        first_name: patient.first_name,
-        last_name: patient.last_name,
-        date_of_birth: patient.date_of_birth,
-        gender: patient.gender,
-        phone_number: patient.phone_number,
+        first_name: patient.first_name || '',
+        last_name: patient.last_name || '',
+        date_of_birth: patient.date_of_birth || '',
+        gender: patient.gender || 'male',
+        phone_number: patient.phone_number || '',
         email: patient.email || '',
-        address: patient.address,
-        emergency_contact_name: patient.emergency_contact_name,
-        emergency_contact_phone: patient.emergency_contact_phone,
+        address: patient.address || '',
+        emergency_contact_name: patient.emergency_contact_name || '',
+        emergency_contact_phone: patient.emergency_contact_phone || '',
         blood_group: patient.blood_group || '',
       });
     } else {
       setEditingPatient(null);
-      setFormData({
-        first_name: '',
-        last_name: '',
-        date_of_birth: '',
-        gender: 'male',
-        phone_number: '',
-        email: '',
-        address: '',
-        emergency_contact_name: '',
-        emergency_contact_phone: '',
-        blood_group: '',
-      });
+      setFormData(INITIAL_FORM_DATA);
     }
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
+    if (submitting) return;
     setIsModalOpen(false);
     setEditingPatient(null);
+    setFormData(INITIAL_FORM_DATA);
   };
 
   const handleInputChange = (e) => {
@@ -98,10 +114,11 @@ const Patients = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setSubmitting(true);
 
     const payload = {
       ...formData,
-      email: formData.email || null,
+      email: formData.email.trim() || null,
       blood_group: formData.blood_group || null,
     };
 
@@ -118,7 +135,9 @@ const Patients = () => {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Failed to submit patient details.');
+      setError(getErrorMessage(err, 'Failed to submit patient details.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -133,8 +152,20 @@ const Patients = () => {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Forbidden. Only administrators can delete patient files.');
+      setError(getErrorMessage(err, 'Forbidden. Only administrators can delete patient files.'));
     }
+  };
+
+  const formatInitials = (firstName = '', lastName = '') => {
+    const f = firstName.charAt(0) || '';
+    const l = lastName.charAt(0) || '';
+    return (f + l).toUpperCase() || '?';
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return isNaN(date.getTime()) ? dateString : date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
   return (
@@ -178,7 +209,7 @@ const Patients = () => {
           </div>
         </div>
 
-        {(user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'nurse' || user?.role === 'receptionist') && (
+        {canEdit && (
           <button
             onClick={() => handleOpenModal()}
             className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md cursor-pointer active:scale-95 self-start transition-all duration-200"
@@ -218,7 +249,7 @@ const Patients = () => {
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold uppercase select-none">
-                          {patient.first_name[0]}{patient.last_name[0]}
+                          {formatInitials(patient.first_name, patient.last_name)}
                         </div>
                         <div>
                           <span className="font-bold text-slate-800 block">{patient.first_name} {patient.last_name}</span>
@@ -232,7 +263,7 @@ const Patients = () => {
                     </td>
                     <td className="py-4 px-6">
                       <span className="text-slate-800 block">
-                        {new Date(patient.date_of_birth).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        {formatDate(patient.date_of_birth)}
                       </span>
                       <span className="text-xs text-slate-400 capitalize block mt-0.5">{patient.gender}</span>
                     </td>
@@ -250,18 +281,20 @@ const Patients = () => {
                     </td>
                     <td className="py-4 px-6 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {(user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'nurse' || user?.role === 'receptionist') && (
+                        {canEdit && (
                           <button
                             onClick={() => handleOpenModal(patient)}
                             className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all duration-200"
+                            title="Edit Patient"
                           >
                             <Edit2 size={16} />
                           </button>
                         )}
-                        {user?.role === 'admin' && (
+                        {canDelete && (
                           <button
                             onClick={() => handleDelete(patient.id)}
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
+                            title="Delete Patient"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -296,7 +329,11 @@ const Patients = () => {
                   </p>
                 </div>
               </div>
-              <button onClick={handleCloseModal} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all duration-200">
+              <button
+                onClick={handleCloseModal}
+                disabled={submitting}
+                className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all duration-200 disabled:opacity-50"
+              >
                 <X size={20} />
               </button>
             </div>
@@ -420,7 +457,7 @@ const Patients = () => {
                     <div className="relative">
                       <Phone size={14} className="absolute left-3 top-2.5 text-slate-400" />
                       <input
-                        type="text"
+                        type="tel"
                         name="phone_number"
                         value={formData.phone_number}
                         onChange={handleInputChange}
@@ -499,7 +536,7 @@ const Patients = () => {
                     <div className="relative">
                       <Phone size={14} className="absolute left-3 top-2.5 text-slate-400" />
                       <input
-                        type="text"
+                        type="tel"
                         name="emergency_contact_phone"
                         value={formData.emergency_contact_phone}
                         onChange={handleInputChange}
@@ -517,15 +554,18 @@ const Patients = () => {
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200"
+                  disabled={submitting}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200"
+                  disabled={submitting}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200 flex items-center gap-2 disabled:opacity-50"
                 >
-                  {editingPatient ? 'Save Changes' : 'Register Patient'}
+                  {submitting && <Loader2 size={16} className="animate-spin" />}
+                  <span>{editingPatient ? 'Save Changes' : 'Register Patient'}</span>
                 </button>
               </div>
             </form>
