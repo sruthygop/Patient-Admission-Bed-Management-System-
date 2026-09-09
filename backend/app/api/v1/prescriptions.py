@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.core.database import get_db
-from app.models.models import Prescription, Admission, Patient, User
+from app.models.models import Prescription, Admission, Patient, User, DoctorAssignment
 from app.api.v1.auth import get_current_user
 from app.core.audit import log_audit
 
@@ -54,6 +54,19 @@ def create_prescription(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot create a prescription for a discharged admission"
         )
+
+    # NEW CHECK: doctors can only prescribe for admissions they're assigned to
+    if current_user.role == "doctor":
+        assignment = db.query(DoctorAssignment).filter(
+            DoctorAssignment.admission_id == prescription_in.admission_id,
+            DoctorAssignment.doctor_id == current_user.id,
+            DoctorAssignment.unassigned_at == None
+        ).first()
+        if not assignment:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not assigned to this patient. Only the assigned doctor or a CMO can create prescriptions."
+            )
 
     check_hospital_access(current_user, getattr(admission, "hospital_id", None))
 
