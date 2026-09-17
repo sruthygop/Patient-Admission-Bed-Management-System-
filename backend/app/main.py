@@ -1,6 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.api.v1 import auth, patients, beds, admissions, dashboard, audit_logs, doctor_assignments, staff_assignments, analytics, prescriptions, hospitals
 
 app = FastAPI(
@@ -9,6 +14,24 @@ app = FastAPI(
     version="1.0.0",
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# --- Request Body Size Limit Middleware ---
+MAX_BODY_SIZE = 2 * 1024 * 1024  # 2 MB
+
+class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > MAX_BODY_SIZE:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": f"Request body too large. Max allowed size is {MAX_BODY_SIZE // (1024*1024)}MB."}
+            )
+        return await call_next(request)
+
+app.add_middleware(BodySizeLimitMiddleware)
 
 # CORS configurations
 app.add_middleware(

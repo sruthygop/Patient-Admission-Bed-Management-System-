@@ -4,11 +4,19 @@ from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from app.schemas.patient import PatientResponse
 from app.schemas.bed import BedResponse
+from app.core.sanitize import sanitize_text  # <--- Added import
 
 # --- Doctor Assignment Schemas ---
 class DoctorAssignmentBase(BaseModel):
     doctor_id: UUID
     notes: Optional[str] = None
+
+    @field_validator('notes')  # <--- Sanitizes doctor assignment notes
+    @classmethod
+    def sanitize_notes(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        return sanitize_text(v)
 
 class DoctorAssignmentResponse(DoctorAssignmentBase):
     id: UUID
@@ -25,6 +33,12 @@ class AdmissionCreate(BaseModel):
     bed_id: UUID
     reason_for_admission: str
     primary_doctor_id: Optional[UUID] = None
+
+    @field_validator('reason_for_admission')  # <--- Sanitizes reason for admission
+    @classmethod
+    def sanitize_reason(cls, v: str) -> str:
+        return sanitize_text(v)
+
 class DischargeRequest(BaseModel):
     bed_status: str = Field("maintenance", description="Post-discharge bed status. Allowed: 'available', 'maintenance'")
 

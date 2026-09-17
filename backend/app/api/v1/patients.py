@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models.models import User
 from app.api.v1.auth import get_current_user
 from app.schemas.patient import PatientCreate, PatientUpdate, PatientResponse
+from app.schemas.pagination import PaginatedResponse
 from app.crud import patient as patient_crud
 
 router = APIRouter()
@@ -41,26 +42,34 @@ def register_patient(
     )
 
 
-@router.get("/", response_model=List[PatientResponse])
+@router.get("/", response_model=PaginatedResponse[PatientResponse])
 def read_patients(
     search: Optional[str] = None,
     phone: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 100,
+    page: int = 1,
+    page_size: int = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(["admin", "doctor", "cmo", "nurse", "receptionist"]))
 ):
     """
     Search and filter patients scoped to current user's hospital.
+    Returns a paginated response with items, total_count, page, and page_size.
     """
-    return patient_crud.get_patients(
+    skip = (page - 1) * page_size
+    items, total_count = patient_crud.get_patients(
         db=db, 
         search=search, 
         phone=phone, 
         skip=skip, 
-        limit=limit,
+        limit=page_size,
         hospital_id=current_user.hospital_id,
         user_role=current_user.role
+    )
+    return PaginatedResponse(
+        items=items,
+        total_count=total_count,
+        page=page,
+        page_size=page_size
     )
 
 

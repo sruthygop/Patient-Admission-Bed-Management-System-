@@ -1,6 +1,6 @@
 from datetime import timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.models.models import User, Hospital
 from app.core.audit import log_audit
 
@@ -72,7 +73,9 @@ def get_current_user(
 # ==================== AUTH & USER ENDPOINTS ====================
 
 @router.post("/login")
+@limiter.limit("5/minute")
 def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
@@ -237,6 +240,8 @@ def list_doctors(
 
 @router.get("/users")
 def get_all_users(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Page size"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -247,12 +252,15 @@ def get_all_users(
             detail="Admin only"
         )
     
-    if current_user.role == "super_admin":
-        users = db.query(User).all()
-    else:
-        users = db.query(User).filter(User.hospital_id == current_user.hospital_id).all()
+    query = db.query(User)
+    if current_user.role != "super_admin":
+        query = query.filter(User.hospital_id == current_user.hospital_id)
 
-    return [
+    total_count = query.count()
+    skip = (page - 1) * page_size
+    users = query.offset(skip).limit(page_size).all()
+
+    items = [
         {
             "id": str(u.id),
             "username": u.username,
@@ -266,6 +274,13 @@ def get_all_users(
         }
         for u in users
     ]
+
+    return {
+        "items": items,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size
+    }
 
 
 @router.post("/users/create")

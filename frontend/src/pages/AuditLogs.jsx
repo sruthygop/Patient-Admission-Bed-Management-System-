@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, AlertCircle, Shield, Building2, Search, Filter } from 'lucide-react';
+import { Loader2, AlertCircle, Shield, Building2, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const PAGE_SIZE = 50;
 
 const AuditLogs = () => {
     const { user } = useAuth();
     const isSuperAdmin = user?.role === 'super_admin';
 
     const [logs, setLogs] = useState([]);
+    const [totalCount, setTotalCount] = useState(0);
+    const [page, setPage] = useState(1);
     const [users, setUsers] = useState({});
     const [patients, setPatients] = useState({});
     const [wards, setWards] = useState({});
@@ -19,18 +23,23 @@ const AuditLogs = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedActionFilter, setSelectedActionFilter] = useState('ALL');
 
+    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
     useEffect(() => {
         const fetchAll = async () => {
             setLoading(true);
             try {
-                // Primary log fetch
-                const logsRes = await api.get('/api/v1/audit-logs/');
-                setLogs(logsRes.data || []);
+                // Primary log fetch (paginated)
+                const logsRes = await api.get('/api/v1/audit-logs/', {
+                    params: { page, page_size: PAGE_SIZE }
+                });
+                setLogs(logsRes.data.items || []);
+                setTotalCount(logsRes.data.total_count || 0);
 
                 // Fetch metadata concurrently with failure isolation
                 const [usersRes, patientsRes, wardsRes, hospitalsRes] = await Promise.allSettled([
                     api.get('/api/v1/auth/users'),
-                    api.get('/api/v1/patients/'),
+                    api.get('/api/v1/patients/', { params: { page: 1, page_size: 1000 } }),
                     api.get('/api/v1/beds/wards'),
                     isSuperAdmin ? api.get('/api/v1/hospitals/') : Promise.reject('Not super_admin')
                 ]);
@@ -38,16 +47,16 @@ const AuditLogs = () => {
                 // Map Users
                 if (usersRes.status === 'fulfilled' && usersRes.value?.data) {
                     const usersMap = {};
-                    usersRes.value.data.forEach(u => {
+                    usersRes.value.data.items.forEach(u => {
                         usersMap[u.id] = `${u.first_name} ${u.last_name} (${u.username})`;
                     });
                     setUsers(usersMap);
                 }
 
                 // Map Patients
-                if (patientsRes.status === 'fulfilled' && patientsRes.value?.data) {
+                if (patientsRes.status === 'fulfilled' && patientsRes.value?.data?.items) {
                     const patientsMap = {};
-                    patientsRes.value.data.forEach(p => {
+                    patientsRes.value.data.items.forEach(p => {
                         patientsMap[p.id] = `${p.first_name} ${p.last_name}`;
                     });
                     setPatients(patientsMap);
@@ -88,7 +97,7 @@ const AuditLogs = () => {
         if (user?.role === 'admin' || user?.role === 'super_admin') {
             fetchAll();
         }
-    }, [user, isSuperAdmin]);
+    }, [user, isSuperAdmin, page]);
 
     const getActionColor = (action = '') => {
         const act = action.toUpperCase();
@@ -144,7 +153,7 @@ const AuditLogs = () => {
     const resolveUser = (userId) => userId ? (users[userId] || userId) : 'System';
     const resolveHospital = (hospitalId) => hospitalId ? (hospitals[hospitalId] || hospitalId) : 'Global';
 
-    // Client-side filtering
+    // Client-side filtering (applies only within the current page of results)
     const filteredLogs = logs.filter(log => {
         const matchesAction = selectedActionFilter === 'ALL' || log.action === selectedActionFilter;
         const searchLower = searchTerm.toLowerCase();
@@ -188,8 +197,8 @@ const AuditLogs = () => {
                     </h2>
                     <p className="text-sm text-slate-400 mt-1">
                         {isSuperAdmin
-                            ? `Complete system activity history across all hospitals — ${filteredLogs.length} records`
-                            : `Complete activity history for your hospital — ${filteredLogs.length} records`}
+                            ? `Complete system activity history across all hospitals — ${totalCount} total records`
+                            : `Complete activity history for your hospital — ${totalCount} total records`}
                     </p>
                 </div>
 
@@ -227,7 +236,7 @@ const AuditLogs = () => {
                 </div>
             )}
 
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex-1">
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm border-collapse">
                         <thead>
@@ -288,6 +297,32 @@ const AuditLogs = () => {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50">
+                    <span className="text-xs text-slate-500 font-medium">
+                        Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount} logs
+                    </span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            disabled={page <= 1}
+                            className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
+                        >
+                            <ChevronLeft size={16} />
+                        </button>
+                        <span className="text-xs font-semibold text-slate-600 px-2">
+                            Page {page} of {totalPages}
+                        </span>
+                        <button
+                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                            disabled={page >= totalPages}
+                            className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
+                        >
+                            <ChevronRight size={16} />
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

@@ -48,8 +48,8 @@ const Sidebar = () => {
     setShowProfileModal(true);
     if (user?.role === 'admin' || user?.role === 'super_admin') {
       try {
-        const res = await api.get('/api/v1/auth/users');
-        setAllUsers(res.data.filter(u => u.id !== user.id));
+        const res = await api.get('/api/v1/auth/users', { params: { page: 1, page_size: 200 } });
+        setAllUsers(res.data.items.filter(u => u.id !== user.id));
       } catch (err) {
         console.error('Failed to load users');
       }

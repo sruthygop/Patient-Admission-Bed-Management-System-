@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -29,7 +29,7 @@ def get_patients(
     limit: int = 100,
     hospital_id: Optional[UUID] = None,
     user_role: Optional[str] = None
-) -> List[Patient]:
+) -> Tuple[List[Patient], int]:
     query = db.query(Patient).filter(Patient.is_deleted == False)
     if user_role != "super_admin" and hospital_id:
         query = query.filter(Patient.hospital_id == hospital_id)
@@ -43,7 +43,10 @@ def get_patients(
         )
     if phone:
         query = query.filter(Patient.phone_number.like(f"%{phone}%"))
-    return query.order_by(Patient.created_at.desc()).offset(skip).limit(limit).all()
+
+    total_count = query.count()
+    items = query.order_by(Patient.created_at.desc()).offset(skip).limit(limit).all()
+    return items, total_count
 
 
 def create_patient(

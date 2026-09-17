@@ -3,7 +3,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
   Search, Plus, Edit2, Trash2, X, Loader2, AlertCircle, CheckCircle2,
-  Users, User, Phone, Mail, MapPin, Heart, Calendar, Shield
+  Users, User, Phone, Mail, MapPin, Heart, Calendar, Shield, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 const INITIAL_FORM_DATA = {
@@ -20,6 +20,7 @@ const INITIAL_FORM_DATA = {
 };
 
 const ALLOWED_ROLES = ['admin', 'cmo', 'nurse', 'receptionist'];
+const PAGE_SIZE = 20;
 
 const getErrorMessage = (err, fallback) => {
   const detail = err.response?.data?.detail;
@@ -31,6 +32,8 @@ const getErrorMessage = (err, fallback) => {
 const Patients = () => {
   const { user } = useAuth();
   const [patients, setPatients] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -43,6 +46,7 @@ const Patients = () => {
 
   const canEdit = ALLOWED_ROLES.includes(user?.role);
   const canDelete = user?.role === 'admin';
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const fetchPatients = useCallback(async (isMounted = true) => {
     setLoading(true);
@@ -51,16 +55,22 @@ const Patients = () => {
         params: {
           search: searchTerm.trim() || undefined,
           phone: phoneFilter.trim() || undefined,
+          page,
+          page_size: PAGE_SIZE,
         }
       });
-      if (isMounted) setPatients(response.data);
+      if (isMounted) {
+        // Backend now returns { items, total_count, page, page_size }
+        setPatients(response.data.items || []);
+        setTotalCount(response.data.total_count || 0);
+      }
     } catch (err) {
       console.error('Failed to load patients list:', err);
       if (isMounted) setError('Could not retrieve patient records.');
     } finally {
       if (isMounted) setLoading(false);
     }
-  }, [searchTerm, phoneFilter]);
+  }, [searchTerm, phoneFilter, page]);
 
   // Debounced fetch on search or filter change
   useEffect(() => {
@@ -74,6 +84,11 @@ const Patients = () => {
       clearTimeout(timer);
     };
   }, [fetchPatients]);
+
+  // Reset to page 1 whenever the search or phone filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, phoneFilter]);
 
   const handleOpenModal = (patient = null) => {
     setError('');
@@ -186,6 +201,7 @@ const Patients = () => {
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div className="flex flex-wrap gap-3 flex-1 max-w-2xl">
+          {/* Name Search Input with Clear (X) Button */}
           <div className="relative flex-1 min-w-[200px]">
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
               <Search size={16} />
@@ -195,17 +211,39 @@ const Patients = () => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search by first or last name..."
-              className="w-full bg-white border border-slate-200 rounded-xl py-2.5 pl-9 pr-4 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all duration-200"
+              className="w-full bg-white border border-slate-200 rounded-xl py-2.5 pl-9 pr-9 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all duration-200"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                title="Clear search"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
-          <div className="w-48">
+
+          {/* Phone Filter Input with Clear (X) Button */}
+          <div className="relative w-48">
             <input
               type="text"
               value={phoneFilter}
               onChange={(e) => setPhoneFilter(e.target.value)}
               placeholder="Filter by phone number..."
-              className="w-full bg-white border border-slate-200 rounded-xl py-2.5 px-4 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all duration-200"
+              className="w-full bg-white border border-slate-200 rounded-xl py-2.5 pl-4 pr-9 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all duration-200"
             />
+            {phoneFilter && (
+              <button
+                type="button"
+                onClick={() => setPhoneFilter('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                title="Clear filter"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -305,6 +343,32 @@ const Patients = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50">
+            <span className="text-xs text-slate-500 font-medium">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount} patients
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="text-xs font-semibold text-slate-600 px-2">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
         </div>
       )}

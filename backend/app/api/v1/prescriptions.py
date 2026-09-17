@@ -1,6 +1,6 @@
 from uuid import UUID
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.core.database import get_db
@@ -123,6 +123,8 @@ def create_prescription(
 @router.get("/admission/{admission_id}")
 def get_prescriptions_by_admission(
     admission_id: UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -135,12 +137,14 @@ def get_prescriptions_by_admission(
             Prescription.hospital_id == current_user.hospital_id
         )
 
-    prescriptions = query.order_by(Prescription.prescribed_at.desc()).all()
+    total_count = query.count()
+    skip = (page - 1) * page_size
+    prescriptions = query.order_by(Prescription.prescribed_at.desc()).offset(skip).limit(page_size).all()
 
-    result = []
+    items = []
     for p in prescriptions:
         doctor = db.query(User).filter(User.id == p.prescribed_by).first()
-        result.append({
+        items.append({
             "id": str(p.id),
             "medicine_name": p.medicine_name,
             "dosage": p.dosage,
@@ -151,12 +155,20 @@ def get_prescriptions_by_admission(
             "prescribed_at": p.prescribed_at,
             "prescribed_by_name": f"{doctor.first_name} {doctor.last_name}" if doctor else "Unknown"
         })
-    return result
+
+    return {
+        "items": items,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size
+    }
 
 
 @router.get("/patient/{patient_id}")
 def get_prescriptions_by_patient(
     patient_id: UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -169,12 +181,14 @@ def get_prescriptions_by_patient(
             Prescription.hospital_id == current_user.hospital_id
         )
 
-    prescriptions = query.order_by(Prescription.prescribed_at.desc()).all()
+    total_count = query.count()
+    skip = (page - 1) * page_size
+    prescriptions = query.order_by(Prescription.prescribed_at.desc()).offset(skip).limit(page_size).all()
 
-    result = []
+    items = []
     for p in prescriptions:
         doctor = db.query(User).filter(User.id == p.prescribed_by).first()
-        result.append({
+        items.append({
             "id": str(p.id),
             "medicine_name": p.medicine_name,
             "dosage": p.dosage,
@@ -185,7 +199,13 @@ def get_prescriptions_by_patient(
             "prescribed_at": p.prescribed_at,
             "prescribed_by_name": f"{doctor.first_name} {doctor.last_name}" if doctor else "Unknown"
         })
-    return result
+
+    return {
+        "items": items,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size
+    }
 
 
 @router.delete("/{prescription_id}")

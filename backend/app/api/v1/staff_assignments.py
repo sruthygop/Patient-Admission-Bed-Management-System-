@@ -1,6 +1,6 @@
 from uuid import UUID
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
@@ -29,6 +29,8 @@ class StaffAssignmentCreate(BaseModel):
 
 @router.get("/")
 def get_staff_assignments(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -44,13 +46,15 @@ def get_staff_assignments(
             Ward.hospital_id == current_user.hospital_id
         )
 
-    assignments = query.all()
+    total_count = query.count()
+    skip = (page - 1) * page_size
+    assignments = query.offset(skip).limit(page_size).all()
 
-    result = []
+    items = []
     for a in assignments:
         staff = a.staff if hasattr(a, 'staff') else db.query(User).filter(User.id == a.staff_id).first()
         ward = a.ward if hasattr(a, 'ward') else db.query(Ward).filter(Ward.id == a.ward_id).first()
-        result.append({
+        items.append({
             "id": str(a.id),
             "ward_id": str(a.ward_id),
             "ward_name": ward.name if ward else "Unknown",
@@ -61,7 +65,13 @@ def get_staff_assignments(
             "shift_end": a.shift_end.isoformat() if a.shift_end else None,
             "created_at": a.created_at.isoformat() if getattr(a, 'created_at', None) else None
         })
-    return result
+
+    return {
+        "items": items,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size
+    }
 
 
 @router.post("/", status_code=201)

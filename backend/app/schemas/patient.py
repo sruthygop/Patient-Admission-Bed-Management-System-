@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator
+from app.core.sanitize import sanitize_text
 
 class PatientBase(BaseModel):
     first_name: str = Field(..., max_length=50)
@@ -14,6 +15,11 @@ class PatientBase(BaseModel):
     emergency_contact_name: str = Field(..., max_length=100)
     emergency_contact_phone: str = Field(..., max_length=15)
     blood_group: Optional[str] = Field(None, max_length=5)
+
+    @field_validator('first_name', 'last_name', 'address', 'emergency_contact_name')
+    @classmethod
+    def sanitize_text_fields(cls, v: str) -> str:
+        return sanitize_text(v)
 
     @field_validator('date_of_birth')
     @classmethod
@@ -54,6 +60,13 @@ class PatientUpdate(BaseModel):
     emergency_contact_name: Optional[str] = Field(None, max_length=100)
     emergency_contact_phone: Optional[str] = Field(None, max_length=15)
     blood_group: Optional[str] = None
+
+    @field_validator('first_name', 'last_name', 'address', 'emergency_contact_name')
+    @classmethod
+    def sanitize_text_fields(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        return sanitize_text(v)
 
     @field_validator('date_of_birth')
     @classmethod

@@ -1,7 +1,7 @@
 from uuid import UUID
 from typing import Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.core.database import get_db
@@ -67,6 +67,50 @@ def get_doctors_list(
         }
         for d in doctors
     ]
+
+
+@router.get("/")
+def get_all_active_assignments(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Returns all currently active (not unassigned) doctor assignments, scoped by hospital."""
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
+
+    query = db.query(DoctorAssignment).filter(DoctorAssignment.unassigned_at == None)
+
+    if current_user.role != "super_admin":
+        query = query.filter(DoctorAssignment.hospital_id == current_user.hospital_id)
+
+    total_count = query.count()
+    skip = (page - 1) * page_size
+    assignments = query.order_by(DoctorAssignment.assigned_at.desc()).offset(skip).limit(page_size).all()
+
+    items = []
+    for a in assignments:
+        doctor = db.query(User).filter(User.id == a.doctor_id).first()
+        admission = db.query(Admission).filter(Admission.id == a.admission_id).first()
+        patient = None
+        if admission:
+            patient = db.query(Patient).filter(Patient.id == admission.patient_id).first()
+        items.append({
+            "id": str(a.id),
+            "admission_id": str(a.admission_id),
+            "doctor_id": str(a.doctor_id),
+            "doctor_name": f"Dr. {doctor.first_name} {doctor.last_name}" if doctor else "Unknown",
+            "patient_name": f"{patient.first_name} {patient.last_name}" if patient else "Unknown",
+            "assigned_at": a.assigned_at.isoformat() if a.assigned_at else None,
+            "notes": a.notes
+        })
+
+    return {
+        "items": items,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size
+    }
 
 
 @router.get("/{admission_id}")

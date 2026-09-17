@@ -1,5 +1,5 @@
 from uuid import UUID
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from app.models.models import Ward, Room, Bed
@@ -157,7 +157,7 @@ def create_bed(
             detail=f"Bed number '{bed_data.bed_number}' already exists in this room."
         )
 
-    # NEW CHECK: enforce ward capacity before adding another bed
+    # Enforce ward capacity before adding another bed
     room = db.query(Room).filter(Room.id == bed_data.room_id).first()
     if not room:
         raise HTTPException(
@@ -213,6 +213,24 @@ def get_bed(
     if user_role != "super_admin" and hospital_id:
         query = query.filter(Bed.hospital_id == hospital_id)
     return query.first()
+
+
+def get_beds(
+    db: Session,
+    skip: int = 0,
+    limit: int = 50,
+    hospital_id: Optional[UUID] = None,
+    user_role: Optional[str] = None
+) -> Tuple[List[Bed], int]:
+    query = db.query(Bed).join(Room).join(Ward)
+    
+    if user_role != "super_admin" and hospital_id:
+        query = query.filter(Ward.hospital_id == hospital_id)
+
+    total = query.count()
+    beds = query.offset(skip).limit(limit).all()
+    
+    return beds, total
 
 
 def get_beds_by_room(

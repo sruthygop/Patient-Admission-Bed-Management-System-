@@ -48,6 +48,7 @@ const Beds = () => {
       setWards(wardsRes.data);
       setActiveAdmissions(activeAdmsRes.data);
       setPatients(patientsRes.data);
+      // setPatients(patientsRes.data.items);
     } catch (err) {
       console.error('Error fetching bed/admission records:', err);
       setError('Could not retrieve ward or allocation data.');

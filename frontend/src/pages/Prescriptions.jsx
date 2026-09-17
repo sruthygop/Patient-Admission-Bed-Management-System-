@@ -40,7 +40,7 @@ const Prescriptions = () => {
         setPresLoading(true);
         try {
             const response = await api.get(`/api/v1/prescriptions/admission/${admissionId}`);
-            setPrescriptions(response.data || []);
+            setPrescriptions(response.data.items || []);
         } catch (err) {
             console.error('Failed to load prescriptions:', err);
             setError(getErrorMessage(err, 'Could not load prescriptions for the selected patient.'));
@@ -346,8 +346,8 @@ const Prescriptions = () => {
                                             <div className="flex items-center gap-2">
                                                 <span
                                                     className={`px-2 py-0.5 border rounded-full text-[10px] font-bold uppercase ${prescription.is_active
-                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                        : 'bg-slate-100 text-slate-500 border-slate-200'
                                                         }`}
                                                 >
                                                     {prescription.is_active ? 'Active' : 'Inactive'}

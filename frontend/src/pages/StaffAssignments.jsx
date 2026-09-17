@@ -27,13 +27,13 @@ const StaffAssignments = () => {
                 api.get('/api/v1/staff-assignments/'),
                 api.get('/api/v1/beds/wards'),
             ]);
-            setAssignments(assignmentsRes.data);
+            setAssignments(assignmentsRes.data.items);
             setWards(wardsRes.data);
 
             // Admin and CMO can fetch users list
             if (user?.role === 'admin' || user?.role === 'cmo') {
-                const usersRes = await api.get('/api/v1/auth/users');
-                setStaff(usersRes.data.filter(u => ['nurse', 'receptionist', 'staff'].includes(u.role) && u.is_active === true));
+                const usersRes = await api.get('/api/v1/auth/users', { params: { page: 1, page_size: 200 } });
+                setStaff(usersRes.data.items.filter(u => ['nurse', 'receptionist', 'staff'].includes(u.role) && u.is_active === true));
             }
         } catch (err) {
             console.error('Failed to load staff assignments:', err);
