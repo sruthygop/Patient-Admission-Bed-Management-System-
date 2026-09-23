@@ -3,6 +3,15 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, AlertCircle, CheckCircle2, Plus, Edit2, X, Users, Shield, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
+const getErrorMessage = (err, fallback) => {
+    const detail = err.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+        return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+    }
+    return fallback;
+};
+
 const UserManagement = () => {
     const { user } = useAuth();
     const isSuperAdmin = user?.role === 'super_admin';
@@ -11,6 +20,7 @@ const UserManagement = () => {
     const [hospitals, setHospitals] = useState([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [togglingId, setTogglingId] = useState(null);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -54,7 +64,7 @@ const UserManagement = () => {
             }
         } catch (err) {
             console.error('Failed to load users:', err);
-            setError('Could not retrieve users.');
+            setError(getErrorMessage(err, 'Could not retrieve users.'));
             setUsers([]);
             setTotalUsers(0);
         } finally {
@@ -66,8 +76,8 @@ const UserManagement = () => {
         try {
             const response = await api.get('/api/v1/hospitals/');
             const data = response.data;
-            if (Array.isArray(data)) {
-                setHospitals(data);
+            if (Array.isArray(data.items)) {
+                setHospitals(data.items);
             } else if (data && Array.isArray(data.hospitals)) {
                 setHospitals(data.hospitals);
             } else if (data && Array.isArray(data.data)) {
@@ -149,13 +159,15 @@ const UserManagement = () => {
             setIsModalOpen(false);
             setTimeout(() => setSuccess(''), 4000);
         } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to save user.');
+            setError(getErrorMessage(err, 'Failed to save user.'));
         } finally {
             setSubmitting(false);
         }
     };
 
     const handleToggleActive = async (userId, currentStatus) => {
+        setError('');
+        setTogglingId(userId);
         try {
             await api.put(`/api/v1/auth/users/${userId}`, {
                 is_active: !currentStatus
@@ -164,7 +176,9 @@ const UserManagement = () => {
             fetchUsers();
             setTimeout(() => setSuccess(''), 4000);
         } catch (err) {
-            setError('Failed to update user status.');
+            setError(getErrorMessage(err, 'Failed to update user status.'));
+        } finally {
+            setTogglingId(null);
         }
     };
 
@@ -185,10 +199,10 @@ const UserManagement = () => {
         const term = searchTerm.toLowerCase();
         const fullName = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
         const username = (u.username || '').toLowerCase();
-        const email = (u.email || '').toLowerCase();
+        const hospitalName = (u.hospital_name || '').toLowerCase();
         const role = (u.role || '').toLowerCase();
 
-        return fullName.includes(term) || username.includes(term) || email.includes(term) || role.includes(term);
+        return fullName.includes(term) || username.includes(term) || hospitalName.includes(term) || role.includes(term);
     });
 
     const totalPages = Math.ceil(totalUsers / pageSize) || 1;
@@ -242,7 +256,7 @@ const UserManagement = () => {
                 <div className="relative flex-1 max-w-md">
                     <input
                         type="text"
-                        placeholder="Search by name, username, email, or role..."
+                        placeholder="Search by name, username, hospital, or role..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 shadow-sm"
@@ -333,12 +347,13 @@ const UserManagement = () => {
                                                 </button>
                                                 <button
                                                     onClick={() => handleToggleActive(u.id, u.is_active)}
-                                                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 ${u.is_active
+                                                    disabled={togglingId === u.id}
+                                                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${u.is_active
                                                         ? 'text-red-600 hover:bg-red-50'
                                                         : 'text-emerald-600 hover:bg-emerald-50'
                                                         }`}
                                                 >
-                                                    {u.is_active ? 'Deactivate' : 'Activate'}
+                                                    {togglingId === u.id ? '...' : (u.is_active ? 'Deactivate' : 'Activate')}
                                                 </button>
                                             </div>
                                         </td>
@@ -395,7 +410,7 @@ const UserManagement = () => {
                                     {editingUser ? 'Edit User' : 'Add New User'}
                                 </h3>
                             </div>
-                            <button onClick={() => setIsModalOpen(false)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200">
+                            <button onClick={() => setIsModalOpen(false)} disabled={submitting} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 disabled:opacity-50">
                                 <X size={20} />
                             </button>
                         </div>

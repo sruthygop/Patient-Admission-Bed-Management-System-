@@ -1,7 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, AlertCircle, CheckCircle2, Plus, Edit2, X, Building2, Shield } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Plus, Edit2, X, Building2, Shield, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const getErrorMessage = (err, fallback) => {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+        return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+    }
+    return fallback;
+};
 
 const HospitalManagement = () => {
     const { user } = useAuth();
@@ -12,6 +21,16 @@ const HospitalManagement = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingHospital, setEditingHospital] = useState(null);
 
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Pagination state
+    const [page, setPage] = useState(1);
+    const [pageSize] = useState(20);
+    const [totalCount, setTotalCount] = useState(0);
+
+    const [submitting, setSubmitting] = useState(false);
+    const [togglingId, setTogglingId] = useState(null);
+
     const [formData, setFormData] = useState({
         name: '',
         code: '',
@@ -21,23 +40,33 @@ const HospitalManagement = () => {
         logo_url: '',
     });
 
-    const fetchHospitals = async () => {
+    const fetchHospitals = useCallback(async () => {
+        setLoading(true);
         try {
-            const response = await api.get('/api/v1/hospitals/');
-            setHospitals(response.data);
+            const response = await api.get('/api/v1/hospitals/', {
+                params: { page, page_size: pageSize }
+            });
+            setHospitals(response.data.items || []);
+            setTotalCount(response.data.total_count || 0);
         } catch (err) {
             console.error('Failed to load hospitals:', err);
-            setError('Could not retrieve hospitals.');
+            setError(getErrorMessage(err, 'Could not retrieve hospitals.'));
         } finally {
             setLoading(false);
         }
-    };
+    }, [page, pageSize]);
 
     useEffect(() => {
         fetchHospitals();
-    }, []);
+    }, [fetchHospitals]);
+
+    // Reset to page 1 whenever the search term changes
+    useEffect(() => {
+        setPage(1);
+    }, [searchTerm]);
 
     const handleOpenModal = (hospitalToEdit = null) => {
+        setError('');
         if (hospitalToEdit) {
             setEditingHospital(hospitalToEdit);
             setFormData({
@@ -62,10 +91,16 @@ const HospitalManagement = () => {
         setIsModalOpen(true);
     };
 
+    const handleCloseModal = () => {
+        if (submitting) return; // don't allow closing mid-submit
+        setIsModalOpen(false);
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setSuccess('');
+        setSubmitting(true);
         try {
             if (editingHospital) {
                 // code is immutable after creation — excluded from update payload
@@ -85,11 +120,15 @@ const HospitalManagement = () => {
             setIsModalOpen(false);
             setTimeout(() => setSuccess(''), 4000);
         } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to save hospital.');
+            setError(getErrorMessage(err, 'Failed to save hospital.'));
+        } finally {
+            setSubmitting(false);
         }
     };
 
     const handleToggleActive = async (hospitalId, currentStatus) => {
+        setError('');
+        setTogglingId(hospitalId);
         try {
             await api.put(`/api/v1/hospitals/${hospitalId}`, {
                 is_active: !currentStatus
@@ -98,9 +137,20 @@ const HospitalManagement = () => {
             fetchHospitals();
             setTimeout(() => setSuccess(''), 4000);
         } catch (err) {
-            setError('Failed to update hospital status.');
+            setError(getErrorMessage(err, 'Failed to update hospital status.'));
+        } finally {
+            setTogglingId(null);
         }
     };
+
+    // Filter within the currently loaded page's hospitals (backend has no search param)
+    const filteredHospitals = hospitals.filter((h) => {
+        if (!searchTerm.trim()) return true;
+        const term = searchTerm.toLowerCase();
+        return (h.name || '').toLowerCase().includes(term) || (h.code || '').toLowerCase().includes(term);
+    });
+
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
     if (user?.role !== 'super_admin') {
         return (
@@ -138,7 +188,7 @@ const HospitalManagement = () => {
             )}
 
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800">Hospital Management</h1>
                     <p className="text-sm text-slate-400 mt-1">Onboard and manage hospital tenants</p>
@@ -152,79 +202,141 @@ const HospitalManagement = () => {
                 </button>
             </div>
 
-            {/* Hospitals Table */}
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm border-collapse">
-                        <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50 text-slate-400 font-bold text-xs uppercase tracking-wider">
-                                <th className="py-3 px-6">Hospital</th>
-                                <th className="py-3 px-6">Code</th>
-                                <th className="py-3 px-6">Contact</th>
-                                <th className="py-3 px-6">Status</th>
-                                <th className="py-3 px-6 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {hospitals.map((h) => (
-                                <tr key={h.id} className="hover:bg-slate-50/40 transition-all duration-200">
-                                    <td className="py-4 px-6">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-                                                <Building2 size={16} />
-                                            </div>
-                                            <div>
-                                                <p className="font-bold text-slate-800">{h.name}</p>
-                                                {h.address && <p className="text-xs text-slate-400">{h.address}</p>}
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="py-4 px-6">
-                                        <span className="text-[10px] font-bold uppercase px-2 py-1 rounded border bg-slate-50 text-slate-600 border-slate-200">
-                                            {h.code}
-                                        </span>
-                                    </td>
-                                    <td className="py-4 px-6">
-                                        <p className="text-sm text-slate-600">{h.email || '—'}</p>
-                                        <p className="text-xs text-slate-400">{h.phone || ''}</p>
-                                    </td>
-                                    <td className="py-4 px-6">
-                                        {h.is_active ? (
-                                            <span className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-bold uppercase">
-                                                ● Active
-                                            </span>
-                                        ) : (
-                                            <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full text-[10px] font-bold uppercase">
-                                                ● Inactive
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="py-4 px-6 text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={() => handleOpenModal(h)}
-                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all duration-200"
-                                                title="Edit hospital"
-                                            >
-                                                <Edit2 size={16} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleToggleActive(h.id, h.is_active)}
-                                                className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 ${h.is_active
-                                                    ? 'text-red-600 hover:bg-red-50'
-                                                    : 'text-emerald-600 hover:bg-emerald-50'
-                                                    }`}
-                                            >
-                                                {h.is_active ? 'Deactivate' : 'Activate'}
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+            {/* Search Bar */}
+            <div className="mb-4 flex items-center gap-3">
+                <div className="relative flex-1 max-w-md">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        type="text"
+                        placeholder="Search by hospital name or code..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-9 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 shadow-sm"
+                    />
+                    {searchTerm && (
+                        <button
+                            type="button"
+                            onClick={() => setSearchTerm('')}
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                        >
+                            <X size={16} />
+                        </button>
+                    )}
                 </div>
             </div>
+
+            {/* Hospitals Table */}
+            {filteredHospitals.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center flex flex-col items-center justify-center">
+                    <Building2 size={48} className="text-slate-300 mb-3" />
+                    <h3 className="text-base font-bold text-slate-800">
+                        {searchTerm ? 'No Matching Hospitals' : 'No Hospitals Found'}
+                    </h3>
+                    <p className="text-sm text-slate-400 mt-1">
+                        {searchTerm ? `No results for "${searchTerm}" on this page.` : 'Click Add New Hospital to onboard one.'}
+                    </p>
+                </div>
+            ) : (
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm border-collapse">
+                            <thead>
+                                <tr className="border-b border-slate-200 bg-slate-50 text-slate-400 font-bold text-xs uppercase tracking-wider">
+                                    <th className="py-3 px-6">Hospital</th>
+                                    <th className="py-3 px-6">Code</th>
+                                    <th className="py-3 px-6">Contact</th>
+                                    <th className="py-3 px-6">Status</th>
+                                    <th className="py-3 px-6 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {filteredHospitals.map((h) => (
+                                    <tr key={h.id} className="hover:bg-slate-50/40 transition-all duration-200">
+                                        <td className="py-4 px-6">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                                                    <Building2 size={16} />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-slate-800">{h.name}</p>
+                                                    {h.address && <p className="text-xs text-slate-400">{h.address}</p>}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="py-4 px-6">
+                                            <span className="text-[10px] font-bold uppercase px-2 py-1 rounded border bg-slate-50 text-slate-600 border-slate-200">
+                                                {h.code}
+                                            </span>
+                                        </td>
+                                        <td className="py-4 px-6">
+                                            <p className="text-sm text-slate-600">{h.email || '—'}</p>
+                                            <p className="text-xs text-slate-400">{h.phone || ''}</p>
+                                        </td>
+                                        <td className="py-4 px-6">
+                                            {h.is_active ? (
+                                                <span className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-bold uppercase">
+                                                    ● Active
+                                                </span>
+                                            ) : (
+                                                <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full text-[10px] font-bold uppercase">
+                                                    ● Inactive
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="py-4 px-6 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    onClick={() => handleOpenModal(h)}
+                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all duration-200"
+                                                    title="Edit hospital"
+                                                >
+                                                    <Edit2 size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleToggleActive(h.id, h.is_active)}
+                                                    disabled={togglingId === h.id}
+                                                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${h.is_active
+                                                        ? 'text-red-600 hover:bg-red-50'
+                                                        : 'text-emerald-600 hover:bg-emerald-50'
+                                                        }`}
+                                                >
+                                                    {togglingId === h.id ? '...' : (h.is_active ? 'Deactivate' : 'Activate')}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Pagination Controls */}
+                    <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50">
+                        <span className="text-xs text-slate-500 font-medium">
+                            Showing {totalCount > 0 ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, totalCount)} of {totalCount} hospitals
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                disabled={page <= 1}
+                                className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
+                            >
+                                <ChevronLeft size={16} />
+                            </button>
+                            <span className="text-xs font-semibold text-slate-600 px-2">
+                                Page {page} of {totalPages}
+                            </span>
+                            <button
+                                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                                disabled={page >= totalPages}
+                                className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
+                            >
+                                <ChevronRight size={16} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal: Add/Edit Hospital */}
             {isModalOpen && (
@@ -239,7 +351,7 @@ const HospitalManagement = () => {
                                     {editingHospital ? 'Edit Hospital' : 'Add New Hospital'}
                                 </h3>
                             </div>
-                            <button onClick={() => setIsModalOpen(false)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200">
+                            <button onClick={handleCloseModal} disabled={submitting} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 disabled:opacity-50">
                                 <X size={20} />
                             </button>
                         </div>
@@ -252,7 +364,8 @@ const HospitalManagement = () => {
                                     type="text"
                                     value={formData.name}
                                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                    disabled={submitting}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                                     placeholder="e.g. City General Hospital"
                                     required
                                 />
@@ -267,7 +380,8 @@ const HospitalManagement = () => {
                                         type="text"
                                         value={formData.code}
                                         onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                        disabled={submitting}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                                         placeholder="e.g. CG-003"
                                         required
                                     />
@@ -283,7 +397,8 @@ const HospitalManagement = () => {
                                     type="text"
                                     value={formData.address}
                                     onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                    disabled={submitting}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                                     placeholder="e.g. 123 Healthcare Blvd"
                                 />
                             </div>
@@ -297,7 +412,8 @@ const HospitalManagement = () => {
                                         type="text"
                                         value={formData.phone}
                                         onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                        disabled={submitting}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                                         placeholder="e.g. +91-484-555-0101"
                                     />
                                 </div>
@@ -309,7 +425,8 @@ const HospitalManagement = () => {
                                         type="email"
                                         value={formData.email}
                                         onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                        disabled={submitting}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                                         placeholder="e.g. info@hospital.com"
                                     />
                                 </div>
@@ -323,7 +440,8 @@ const HospitalManagement = () => {
                                     type="text"
                                     value={formData.logo_url}
                                     onChange={(e) => setFormData(prev => ({ ...prev, logo_url: e.target.value }))}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                    disabled={submitting}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                                     placeholder="https://..."
                                 />
                             </div>
@@ -331,15 +449,18 @@ const HospitalManagement = () => {
                             <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setIsModalOpen(false)}
-                                    className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50"
+                                    onClick={handleCloseModal}
+                                    disabled={submitting}
+                                    className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md"
+                                    disabled={submitting}
+                                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md flex items-center gap-2 disabled:opacity-50"
                                 >
+                                    {submitting && <Loader2 size={16} className="animate-spin" />}
                                     {editingHospital ? 'Save Changes' : 'Create Hospital'}
                                 </button>
                             </div>

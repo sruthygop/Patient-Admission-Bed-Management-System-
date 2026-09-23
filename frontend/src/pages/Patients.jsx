@@ -3,7 +3,8 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
   Search, Plus, Edit2, Trash2, X, Loader2, AlertCircle, CheckCircle2,
-  Users, User, Phone, Mail, MapPin, Heart, Calendar, Shield, ChevronLeft, ChevronRight
+  Users, User, Phone, Mail, MapPin, Heart, Calendar, Shield, ChevronLeft, ChevronRight,
+  FileSpreadsheet
 } from 'lucide-react';
 
 const INITIAL_FORM_DATA = {
@@ -36,10 +37,14 @@ const Patients = () => {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [phoneFilter, setPhoneFilter] = useState('');
+  const [registeredFrom, setRegisteredFrom] = useState('');
+  const [registeredTo, setRegisteredTo] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [formData, setFormData] = useState(INITIAL_FORM_DATA);
@@ -55,6 +60,8 @@ const Patients = () => {
         params: {
           search: searchTerm.trim() || undefined,
           phone: phoneFilter.trim() || undefined,
+          registered_from: registeredFrom || undefined,
+          registered_to: registeredTo || undefined,
           page,
           page_size: PAGE_SIZE,
         }
@@ -66,11 +73,11 @@ const Patients = () => {
       }
     } catch (err) {
       console.error('Failed to load patients list:', err);
-      if (isMounted) setError('Could not retrieve patient records.');
+      if (isMounted) setError(getErrorMessage(err, 'Could not retrieve patient records.'));
     } finally {
       if (isMounted) setLoading(false);
     }
-  }, [searchTerm, phoneFilter, page]);
+  }, [searchTerm, phoneFilter, registeredFrom, registeredTo, page]);
 
   // Debounced fetch on search or filter change
   useEffect(() => {
@@ -85,10 +92,10 @@ const Patients = () => {
     };
   }, [fetchPatients]);
 
-  // Reset to page 1 whenever the search or phone filter changes
+  // Reset to page 1 whenever any filter changes
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, phoneFilter]);
+  }, [searchTerm, phoneFilter, registeredFrom, registeredTo]);
 
   const handleOpenModal = (patient = null) => {
     setError('');
@@ -160,6 +167,7 @@ const Patients = () => {
     if (!window.confirm('Are you sure you want to delete this patient record?')) return;
     setError('');
     setSuccess('');
+    setDeletingId(patientId);
     try {
       await api.delete(`/api/v1/patients/${patientId}`);
       setSuccess('Patient record deleted successfully.');
@@ -167,7 +175,45 @@ const Patients = () => {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       console.error(err);
-      setError(getErrorMessage(err, 'Forbidden. Only administrators can delete patient files.'));
+      setError(getErrorMessage(err, 'Failed to delete patient record'));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleExport = async () => {
+    setError('');
+    setExporting(true);
+    try {
+      const response = await api.get('/api/v1/patients/export', {
+        params: {
+          search: searchTerm.trim() || undefined,
+          phone: phoneFilter.trim() || undefined,
+          registered_from: registeredFrom || undefined,
+          registered_to: registeredTo || undefined,
+        },
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      link.setAttribute('download', `patients_export_${timestamp}.xlsx`);
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      setError('Failed to export patient records. Please try again.');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -200,7 +246,7 @@ const Patients = () => {
       )}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-        <div className="flex flex-wrap gap-3 flex-1 max-w-2xl">
+        <div className="flex flex-wrap gap-3 flex-1 max-w-4xl items-center">
           {/* Name Search Input with Clear (X) Button */}
           <div className="relative flex-1 min-w-[200px]">
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
@@ -245,17 +291,64 @@ const Patients = () => {
               </button>
             )}
           </div>
+
+          {/* Registered From Date */}
+          <div className="relative w-44">
+            <input
+              type="date"
+              value={registeredFrom}
+              onChange={(e) => setRegisteredFrom(e.target.value)}
+              max={registeredTo || undefined}
+              className="w-full bg-white border border-slate-200 rounded-xl py-2.5 px-3 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 transition-all duration-200"
+              title="Registered from"
+            />
+          </div>
+
+          {/* Registered To Date */}
+          <div className="relative w-44">
+            <input
+              type="date"
+              value={registeredTo}
+              onChange={(e) => setRegisteredTo(e.target.value)}
+              min={registeredFrom || undefined}
+              className="w-full bg-white border border-slate-200 rounded-xl py-2.5 px-3 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 transition-all duration-200"
+              title="Registered to"
+            />
+          </div>
+
+          {(registeredFrom || registeredTo) && (
+            <button
+              type="button"
+              onClick={() => { setRegisteredFrom(''); setRegisteredTo(''); }}
+              className="flex items-center gap-1 px-3 py-2.5 text-xs font-semibold text-slate-500 hover:text-red-600 transition-colors"
+              title="Clear date filter"
+            >
+              <X size={14} />
+              Clear dates
+            </button>
+          )}
         </div>
 
-        {canEdit && (
+        <div className="flex items-center gap-3 self-start">
           <button
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md cursor-pointer active:scale-95 self-start transition-all duration-200"
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md cursor-pointer active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Plus size={16} />
-            <span>Register Patient</span>
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
+            <span>{exporting ? 'Exporting...' : 'Export to Excel'}</span>
           </button>
-        )}
+
+          {canEdit && (
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md cursor-pointer active:scale-95 transition-all duration-200"
+            >
+              <Plus size={16} />
+              <span>Register Patient</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -270,12 +363,13 @@ const Patients = () => {
         </div>
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overscroll-x-contain">
             <table className="w-full text-left text-sm border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-slate-400 font-semibold text-xs uppercase tracking-wider">
                   <th className="py-3 px-6">Name</th>
                   <th className="py-3 px-6">Birth & Gender</th>
+                  <th className="py-3 px-6">Registered On</th>
                   <th className="py-3 px-6">Contact Info</th>
                   <th className="py-3 px-6">Emergency Contact</th>
                   <th className="py-3 px-6 text-right">Actions</th>
@@ -306,6 +400,11 @@ const Patients = () => {
                       <span className="text-xs text-slate-400 capitalize block mt-0.5">{patient.gender}</span>
                     </td>
                     <td className="py-4 px-6">
+                      <span className="text-slate-800 block">
+                        {formatDate(patient.created_at)}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
                       <span className="text-slate-800 font-semibold block">{patient.phone_number}</span>
                       {patient.email ? (
                         <span className="text-xs text-slate-400 block mt-0.5">{patient.email}</span>
@@ -331,10 +430,15 @@ const Patients = () => {
                         {canDelete && (
                           <button
                             onClick={() => handleDelete(patient.id)}
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
+                            disabled={deletingId === patient.id}
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Delete Patient"
                           >
-                            <Trash2 size={16} />
+                            {deletingId === patient.id ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <Trash2 size={16} />
+                            )}
                           </button>
                         )}
                       </div>
@@ -588,6 +692,8 @@ const Patients = () => {
                         value={formData.emergency_contact_name}
                         onChange={handleInputChange}
                         placeholder="e.g. Jane Doe (Spouse)"
+                        pattern="^[A-Za-z][A-Za-z\s'.\-\(\)]*$"
+                        title="Please enter a valid name (letters only)"
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
                         required
                       />

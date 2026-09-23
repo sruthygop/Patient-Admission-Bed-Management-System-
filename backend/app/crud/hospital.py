@@ -1,5 +1,5 @@
 from uuid import UUID
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from app.models.models import Hospital
@@ -29,8 +29,11 @@ def create_hospital(db: Session, hospital_data: HospitalCreate) -> Hospital:
     return new_hospital
 
 
-def get_hospitals(db: Session, skip: int = 0, limit: int = 100) -> List[Hospital]:
-    return db.query(Hospital).order_by(Hospital.created_at.desc()).offset(skip).limit(limit).all()
+def get_hospitals(db: Session, skip: int = 0, limit: int = 100) -> Tuple[List[Hospital], int]:
+    query = db.query(Hospital).order_by(Hospital.created_at.desc())
+    total = query.count()
+    hospitals = query.offset(skip).limit(limit).all()
+    return hospitals, total
 
 
 def get_hospital(db: Session, hospital_id: UUID) -> Optional[Hospital]:

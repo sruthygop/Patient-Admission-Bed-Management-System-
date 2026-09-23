@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional, Tuple
 from uuid import UUID
 from sqlalchemy.orm import Session
@@ -25,6 +25,8 @@ def get_patients(
     db: Session,
     search: Optional[str] = None,
     phone: Optional[str] = None,
+    registered_from: Optional[date] = None,
+    registered_to: Optional[date] = None,
     skip: int = 0,
     limit: int = 100,
     hospital_id: Optional[UUID] = None,
@@ -43,10 +45,43 @@ def get_patients(
         )
     if phone:
         query = query.filter(Patient.phone_number.like(f"%{phone}%"))
+    if registered_from:
+        query = query.filter(Patient.created_at >= datetime.combine(registered_from, datetime.min.time()))
+    if registered_to:
+        query = query.filter(Patient.created_at < datetime.combine(registered_to, datetime.min.time()) + timedelta(days=1))
 
     total_count = query.count()
     items = query.order_by(Patient.created_at.desc()).offset(skip).limit(limit).all()
     return items, total_count
+
+def get_all_patients_for_export(
+    db: Session,
+    search: Optional[str] = None,
+    phone: Optional[str] = None,
+    registered_from: Optional[date] = None,
+    registered_to: Optional[date] = None,
+    hospital_id: Optional[UUID] = None,
+    user_role: Optional[str] = None
+) -> List[Patient]:
+    query = db.query(Patient).filter(Patient.is_deleted == False)
+    if user_role != "super_admin" and hospital_id:
+        query = query.filter(Patient.hospital_id == hospital_id)
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                Patient.first_name.ilike(search_term),
+                Patient.last_name.ilike(search_term)
+            )
+        )
+    if phone:
+        query = query.filter(Patient.phone_number.like(f"%{phone}%"))
+    if registered_from:
+        query = query.filter(Patient.created_at >= datetime.combine(registered_from, datetime.min.time()))
+    if registered_to:
+        query = query.filter(Patient.created_at < datetime.combine(registered_to, datetime.min.time()) + timedelta(days=1))
+
+    return query.order_by(Patient.created_at.desc()).all()
 
 
 def create_patient(

@@ -78,9 +78,9 @@ const AuditLogs = () => {
                 }
 
                 // Map Hospitals
-                if (hospitalsRes.status === 'fulfilled' && hospitalsRes.value?.data) {
+                if (hospitalsRes.status === 'fulfilled' && hospitalsRes.value?.data.items) {
                     const hospitalsMap = {};
-                    hospitalsRes.value.data.forEach(h => {
+                    hospitalsRes.value.data.items.forEach(h => {
                         hospitalsMap[h.id] = `${h.name} (${h.code})`;
                     });
                     setHospitals(hospitalsMap);

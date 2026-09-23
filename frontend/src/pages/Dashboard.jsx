@@ -23,7 +23,7 @@ const Dashboard = () => {
             api.get('/api/v1/hospitals/').catch(() => ({ data: [] }))
           ]);
           setStats(statsRes.data);
-          setHospitals(hospitalRes.data || []);
+          setHospitals(hospitalRes.data?.items || []);
         } else {
           const response = await api.get('/api/v1/dashboard/stats');
           setStats(response.data);

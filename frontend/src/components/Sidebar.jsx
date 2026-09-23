@@ -4,7 +4,7 @@ import { LayoutDashboard, Users, BedDouble, LogOut, ShieldAlert, ClipboardList, 
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen, onClose }) => {
   const { user, logout } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -120,7 +120,25 @@ const Sidebar = () => {
 
   return (
     <>
-      <aside className="w-64 bg-[#0d1528] text-slate-100 flex flex-col h-screen sticky top-0 border-r border-slate-700/50">
+      {/* Mobile backdrop overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 z-40 md:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0d1528] text-slate-100 flex flex-col h-screen border-r border-slate-700/50 transform transition-transform duration-300 ease-in-out md:sticky md:top-0 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+      >
+        {/* Mobile close button */}
+        <button
+          onClick={onClose}
+          className="md:hidden absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all duration-200"
+        >
+          <X size={18} />
+        </button>
 
         {/* Brand Header */}
         <div className="p-5 border-b border-slate-700/50 flex items-center gap-3">
@@ -181,6 +199,7 @@ const Sidebar = () => {
               <NavLink
                 key={link.to}
                 to={link.to}
+                onClick={onClose}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${isActive
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 font-semibold'

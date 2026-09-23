@@ -37,6 +37,22 @@ const Beds = () => {
   const [roomForm, setRoomForm] = useState({ ward_id: '', room_number: '', room_type: '' });
   const [bedForm, setBedForm] = useState({ room_id: '', bed_number: '' });
 
+  // Loading state for whichever form is currently submitting
+  const [submitting, setSubmitting] = useState(false);
+  // Tracks which specific bed's "Set Available" action is in flight
+  const [settingAvailableId, setSettingAvailableId] = useState(null);
+
+  // Extracts a readable string from a FastAPI/Pydantic error response,
+  // whether detail is a plain string or an array of validator error objects.
+  const getErrorMessage = (err, fallback) => {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      return detail.map(d => d.msg || JSON.stringify(d)).join(', ');
+    }
+    return fallback;
+  };
+
   const fetchData = async () => {
     try {
       setError('');
@@ -47,11 +63,10 @@ const Beds = () => {
       ]);
       setWards(wardsRes.data);
       setActiveAdmissions(activeAdmsRes.data);
-      setPatients(patientsRes.data);
-      // setPatients(patientsRes.data.items);
+      setPatients(patientsRes.data.items);
     } catch (err) {
       console.error('Error fetching bed/admission records:', err);
-      setError('Could not retrieve ward or allocation data.');
+      setError(getErrorMessage(err, 'Could not retrieve ward or allocation data.'));
     } finally {
       setLoading(false);
     }
@@ -81,6 +96,7 @@ const Beds = () => {
   };
 
   const handleCloseModals = () => {
+    if (submitting) return; // don't allow closing mid-submit
     setIsAdmitModalOpen(false);
     setIsDischargeModalOpen(false);
     setIsAddWardModalOpen(false);
@@ -101,6 +117,7 @@ const Beds = () => {
       setError('All fields are required for patient intake.');
       return;
     }
+    setSubmitting(true);
     try {
       await api.post('/api/v1/admissions/', {
         patient_id: admitData.patient_id,
@@ -113,7 +130,9 @@ const Beds = () => {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Intake registration failed.');
+      setError(getErrorMessage(err, 'Intake registration failed.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -122,6 +141,7 @@ const Beds = () => {
     setError('');
     setSuccess('');
     const bedStatus = user?.role === 'doctor' ? 'maintenance' : dischargeStatus;
+    setSubmitting(true);
     try {
       await api.post(`/api/v1/admissions/${selectedAdmission.id}/discharge`, {
         bed_status: bedStatus
@@ -132,13 +152,16 @@ const Beds = () => {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Discharge registration failed.');
+      setError(getErrorMessage(err, 'Discharge registration failed.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleSetAvailable = async (bed) => {
     setError('');
     setSuccess('');
+    setSettingAvailableId(bed.id);
     try {
       await api.put(`/api/v1/beds/${bed.id}/status`, { status: 'available' });
       setSuccess(`Bed ${bed.bed_number} is now marked Available.`);
@@ -146,7 +169,9 @@ const Beds = () => {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       console.error(err);
-      setError('Failed to update bed status.');
+      setError(getErrorMessage(err, 'Failed to update bed status.'));
+    } finally {
+      setSettingAvailableId(null);
     }
   };
 
@@ -154,6 +179,7 @@ const Beds = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setSubmitting(true);
     try {
       await api.post('/api/v1/beds/wards', {
         name: wardForm.name,
@@ -166,7 +192,9 @@ const Beds = () => {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Failed to create ward.');
+      setError(getErrorMessage(err, 'Failed to create ward.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -174,6 +202,7 @@ const Beds = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setSubmitting(true);
     try {
       await api.post('/api/v1/beds/rooms', {
         ward_id: roomForm.ward_id,
@@ -186,7 +215,9 @@ const Beds = () => {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Failed to create room.');
+      setError(getErrorMessage(err, 'Failed to create room.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -194,6 +225,7 @@ const Beds = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setSubmitting(true);
     try {
       await api.post('/api/v1/beds/beds', {
         room_id: bedForm.room_id,
@@ -205,7 +237,9 @@ const Beds = () => {
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Failed to create bed.');
+      setError(getErrorMessage(err, 'Failed to create bed.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -363,8 +397,16 @@ const Beds = () => {
                         ) : (
                           (user?.role === 'admin' || user?.role === 'cmo' || user?.role === 'nurse') && (
                             <button onClick={() => handleSetAvailable(bed)}
-                              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer active:scale-95 transition-all duration-200">
-                              Set Available
+                              disabled={settingAvailableId === bed.id}
+                              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                              {settingAvailableId === bed.id ? (
+                                <>
+                                  <Loader2 size={12} className="animate-spin" />
+                                  Updating...
+                                </>
+                              ) : (
+                                'Set Available'
+                              )}
                             </button>
                           )
                         )}
@@ -384,7 +426,7 @@ const Beds = () => {
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <h3 className="text-lg font-bold text-slate-800">Register Admission</h3>
-              <button onClick={handleCloseModals} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200">
+              <button onClick={handleCloseModals} disabled={submitting} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200 disabled:opacity-50">
                 <X size={20} />
               </button>
             </div>
@@ -400,7 +442,8 @@ const Beds = () => {
                 <select
                   value={admitData.patient_id}
                   onChange={(e) => setAdmitData(prev => ({ ...prev, patient_id: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   required>
                   <option value="" disabled>Select patient...</option>
                   {patients.map((p) => {
@@ -419,18 +462,26 @@ const Beds = () => {
                   value={admitData.reason_for_admission}
                   onChange={(e) => setAdmitData(prev => ({ ...prev, reason_for_admission: e.target.value }))}
                   rows={3}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   placeholder="Describe patient condition or diagnosis..."
                   required />
               </div>
               <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                <button type="button" onClick={handleCloseModals}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200">
+                <button type="button" onClick={handleCloseModals} disabled={submitting}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200 disabled:opacity-50">
                   Cancel
                 </button>
-                <button type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200">
-                  Confirm Admission
+                <button type="submit" disabled={submitting}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2">
+                  {submitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Admitting...
+                    </>
+                  ) : (
+                    'Confirm Admission'
+                  )}
                 </button>
               </div>
             </form>
@@ -444,7 +495,7 @@ const Beds = () => {
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <h3 className="text-lg font-bold text-slate-800">Process Patient Discharge</h3>
-              <button onClick={handleCloseModals} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200">
+              <button onClick={handleCloseModals} disabled={submitting} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200 disabled:opacity-50">
                 <X size={20} />
               </button>
             </div>
@@ -476,6 +527,7 @@ const Beds = () => {
                       <input type="radio" name="discharge_status" value="maintenance"
                         checked={dischargeStatus === 'maintenance'}
                         onChange={() => setDischargeStatus('maintenance')}
+                        disabled={submitting}
                         className="accent-indigo-600" />
                       <span>Set to Maintenance (Recommended for cleaning)</span>
                     </label>
@@ -485,6 +537,7 @@ const Beds = () => {
                       <input type="radio" name="discharge_status" value="available"
                         checked={dischargeStatus === 'available'}
                         onChange={() => setDischargeStatus('available')}
+                        disabled={submitting}
                         className="accent-indigo-600" />
                       <span>Set to Available immediately</span>
                     </label>
@@ -493,13 +546,20 @@ const Beds = () => {
               )}
 
               <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                <button type="button" onClick={handleCloseModals}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200">
+                <button type="button" onClick={handleCloseModals} disabled={submitting}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200 disabled:opacity-50">
                   Cancel
                 </button>
-                <button type="submit"
-                  className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200">
-                  Confirm Discharge
+                <button type="submit" disabled={submitting}
+                  className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2">
+                  {submitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Discharging...
+                    </>
+                  ) : (
+                    'Confirm Discharge'
+                  )}
                 </button>
               </div>
             </form>
@@ -513,7 +573,7 @@ const Beds = () => {
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <h3 className="text-lg font-bold text-slate-800">Add New Ward</h3>
-              <button onClick={handleCloseModals} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200">
+              <button onClick={handleCloseModals} disabled={submitting} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200 disabled:opacity-50">
                 <X size={20} />
               </button>
             </div>
@@ -522,14 +582,16 @@ const Beds = () => {
                 <label className="text-xs font-semibold text-slate-500">Ward Name *</label>
                 <input type="text" value={wardForm.name}
                   onChange={(e) => setWardForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   placeholder="e.g. Cardiology Ward" required />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-slate-500">Ward Type *</label>
                 <select value={wardForm.type}
                   onChange={(e) => setWardForm(prev => ({ ...prev, type: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   required>
                   <option value="" disabled>Select type...</option>
                   <option value="ICU">ICU</option>
@@ -546,17 +608,25 @@ const Beds = () => {
                 <label className="text-xs font-semibold text-slate-500">Capacity *</label>
                 <input type="number" value={wardForm.capacity}
                   onChange={(e) => setWardForm(prev => ({ ...prev, capacity: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   placeholder="e.g. 10" min="1" required />
               </div>
               <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                <button type="button" onClick={handleCloseModals}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200">
+                <button type="button" onClick={handleCloseModals} disabled={submitting}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200 disabled:opacity-50">
                   Cancel
                 </button>
-                <button type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200">
-                  Create Ward
+                <button type="submit" disabled={submitting}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2">
+                  {submitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Ward'
+                  )}
                 </button>
               </div>
             </form>
@@ -570,7 +640,7 @@ const Beds = () => {
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <h3 className="text-lg font-bold text-slate-800">Add New Room</h3>
-              <button onClick={handleCloseModals} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200">
+              <button onClick={handleCloseModals} disabled={submitting} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200 disabled:opacity-50">
                 <X size={20} />
               </button>
             </div>
@@ -579,7 +649,8 @@ const Beds = () => {
                 <label className="text-xs font-semibold text-slate-500">Select Ward *</label>
                 <select value={roomForm.ward_id}
                   onChange={(e) => setRoomForm(prev => ({ ...prev, ward_id: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   required>
                   <option value="" disabled>Select ward...</option>
                   {wards.map((w) => (
@@ -591,14 +662,16 @@ const Beds = () => {
                 <label className="text-xs font-semibold text-slate-500">Room Number *</label>
                 <input type="text" value={roomForm.room_number}
                   onChange={(e) => setRoomForm(prev => ({ ...prev, room_number: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   placeholder="e.g. 201" required />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-slate-500">Room Type *</label>
                 <select value={roomForm.room_type}
                   onChange={(e) => setRoomForm(prev => ({ ...prev, room_type: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   required>
                   <option value="" disabled>Select type...</option>
                   <option value="Private">Private</option>
@@ -607,13 +680,20 @@ const Beds = () => {
                 </select>
               </div>
               <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                <button type="button" onClick={handleCloseModals}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200">
+                <button type="button" onClick={handleCloseModals} disabled={submitting}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200 disabled:opacity-50">
                   Cancel
                 </button>
-                <button type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200">
-                  Create Room
+                <button type="submit" disabled={submitting}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2">
+                  {submitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Room'
+                  )}
                 </button>
               </div>
             </form>
@@ -627,7 +707,7 @@ const Beds = () => {
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <h3 className="text-lg font-bold text-slate-800">Add New Bed</h3>
-              <button onClick={handleCloseModals} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200">
+              <button onClick={handleCloseModals} disabled={submitting} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-all duration-200 disabled:opacity-50">
                 <X size={20} />
               </button>
             </div>
@@ -638,7 +718,8 @@ const Beds = () => {
                   const selectedWard = wards.find(w => w.id === e.target.value);
                   setBedForm(prev => ({ ...prev, room_id: selectedWard?.rooms[0]?.id || '' }));
                 }}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500">
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60">
                   <option value="">Select ward...</option>
                   {wards.map((w) => (
                     <option key={w.id} value={w.id}>{w.name}</option>
@@ -649,7 +730,8 @@ const Beds = () => {
                 <label className="text-xs font-semibold text-slate-500">Select Room *</label>
                 <select value={bedForm.room_id}
                   onChange={(e) => setBedForm(prev => ({ ...prev, room_id: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   required>
                   <option value="" disabled>Select room...</option>
                   {wards.flatMap(w => w.rooms).map((r) => (
@@ -661,17 +743,25 @@ const Beds = () => {
                 <label className="text-xs font-semibold text-slate-500">Bed Number *</label>
                 <input type="text" value={bedForm.bed_number}
                   onChange={(e) => setBedForm(prev => ({ ...prev, bed_number: e.target.value }))}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                  disabled={submitting}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-60"
                   placeholder="e.g. B1" required />
               </div>
               <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                <button type="button" onClick={handleCloseModals}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200">
+                <button type="button" onClick={handleCloseModals} disabled={submitting}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-all duration-200 disabled:opacity-50">
                   Cancel
                 </button>
-                <button type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200">
-                  Create Bed
+                <button type="submit" disabled={submitting}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2">
+                  {submitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Bed'
+                  )}
                 </button>
               </div>
             </form>

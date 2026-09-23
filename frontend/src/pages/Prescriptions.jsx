@@ -30,6 +30,7 @@ const Prescriptions = () => {
     const [loading, setLoading] = useState(true);
     const [presLoading, setPresLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [deactivatingId, setDeactivatingId] = useState(null);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -83,7 +84,7 @@ const Prescriptions = () => {
             });
         } catch (err) {
             console.error('Failed to load admissions:', err);
-            setError('Could not load admissions.');
+            setError(getErrorMessage(err, 'Could not load admissions.'));
         } finally {
             setLoading(false);
         }
@@ -94,6 +95,7 @@ const Prescriptions = () => {
     }, [fetchAdmissions]);
 
     const closeModal = () => {
+        if (submitting) return;
         setIsModalOpen(false);
         setFormData(INITIAL_FORM_DATA);
     };
@@ -109,7 +111,7 @@ const Prescriptions = () => {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isModalOpen]);
+    }, [isModalOpen, submitting]);
 
     const handleSelectAdmission = (admission) => {
         if (selectedAdmission?.id === admission.id) return;
@@ -149,6 +151,7 @@ const Prescriptions = () => {
 
         setError('');
         setSuccess('');
+        setDeactivatingId(prescriptionId);
         try {
             await api.delete(`/api/v1/prescriptions/${prescriptionId}`);
             setSuccess('Prescription deactivated successfully!');
@@ -156,6 +159,8 @@ const Prescriptions = () => {
             setTimeout(() => setSuccess(''), 4000);
         } catch (err) {
             setError(getErrorMessage(err, 'Failed to deactivate prescription.'));
+        } finally {
+            setDeactivatingId(null);
         }
     };
 
@@ -355,9 +360,10 @@ const Prescriptions = () => {
                                                 {canManagePrescriptions && prescription.is_active && (
                                                     <button
                                                         onClick={() => handleDeactivate(prescription.id)}
-                                                        className="text-xs text-red-500 hover:text-red-700 font-semibold transition-all duration-200 ml-1"
+                                                        disabled={deactivatingId === prescription.id}
+                                                        className="text-xs text-red-500 hover:text-red-700 font-semibold transition-all duration-200 ml-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
-                                                        Deactivate
+                                                        {deactivatingId === prescription.id ? 'Deactivating...' : 'Deactivate'}
                                                     </button>
                                                 )}
                                             </div>
@@ -433,7 +439,8 @@ const Prescriptions = () => {
                             <button
                                 type="button"
                                 onClick={closeModal}
-                                className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-colors"
+                                disabled={submitting}
+                                className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 transition-colors disabled:opacity-50"
                             >
                                 <X size={20} />
                             </button>

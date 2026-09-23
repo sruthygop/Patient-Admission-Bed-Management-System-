@@ -1,12 +1,12 @@
 from uuid import UUID
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
 from app.models.models import User
 from app.schemas.hospital import HospitalCreate, HospitalUpdate, HospitalResponse
+from app.schemas.pagination import PaginatedResponse
 from app.crud.hospital import (
     create_hospital,
     get_hospitals,
@@ -39,15 +39,17 @@ def create_new_hospital(
     return create_hospital(db=db, hospital_data=hospital_data)
 
 
-@router.get("/", response_model=List[HospitalResponse])
+@router.get("/", response_model=PaginatedResponse[HospitalResponse])
 def list_hospitals(
-    skip: int = 0,
-    limit: int = 100,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Page size"),
     db: Session = Depends(get_db),
     admin: User = Depends(require_super_admin)
 ):
-    """List all hospitals (Super Admin only)."""
-    return get_hospitals(db=db, skip=skip, limit=limit)
+    """List all hospitals (Super Admin only), paginated."""
+    skip = (page - 1) * page_size
+    hospitals, total = get_hospitals(db=db, skip=skip, limit=page_size)
+    return PaginatedResponse(items=hospitals, total_count=total, page=page, page_size=page_size)
 
 
 @router.get("/{hospital_id}", response_model=HospitalResponse)
