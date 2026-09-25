@@ -1,6 +1,7 @@
 from uuid import UUID
 from typing import Optional, List, Tuple
 from fastapi import HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.models.models import Hospital
 from app.schemas.hospital import HospitalCreate, HospitalUpdate
@@ -29,8 +30,28 @@ def create_hospital(db: Session, hospital_data: HospitalCreate) -> Hospital:
     return new_hospital
 
 
-def get_hospitals(db: Session, skip: int = 0, limit: int = 100) -> Tuple[List[Hospital], int]:
-    query = db.query(Hospital).order_by(Hospital.created_at.desc())
+def get_hospitals(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+    is_active: Optional[bool] = None,
+) -> Tuple[List[Hospital], int]:
+    query = db.query(Hospital)
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                Hospital.name.ilike(search_term),
+                Hospital.code.ilike(search_term),
+            )
+        )
+
+    if is_active is not None:
+        query = query.filter(Hospital.is_active == is_active)
+
+    query = query.order_by(Hospital.created_at.desc())
     total = query.count()
     hospitals = query.offset(skip).limit(limit).all()
     return hospitals, total

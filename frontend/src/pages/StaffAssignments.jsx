@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, AlertCircle, CheckCircle2, Plus, Trash2, X, Users, Search, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -13,6 +13,7 @@ const StaffAssignments = () => {
     const [wards, setWards] = useState([]);
     const [staff, setStaff] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,12 +44,12 @@ const StaffAssignments = () => {
         return fallback;
     };
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
             setError('');
             const [assignmentsRes, wardsRes] = await Promise.all([
-                api.get('/api/v1/staff-assignments/', { params: { page, page_size: PAGE_SIZE } }),
+                api.get('/api/v1/staff-assignments/', { params: { page, page_size: PAGE_SIZE, search: searchTerm.trim() || undefined } }),
                 api.get('/api/v1/beds/wards'),
             ]);
             setAssignments(assignmentsRes.data.items);
@@ -65,13 +66,20 @@ const StaffAssignments = () => {
             setError(getErrorMessage(err, 'Could not retrieve staff assignments.'));
         } finally {
             setLoading(false);
+            setInitialLoading(false);
         }
-    };
+    }, [user, page, searchTerm]);
 
     useEffect(() => {
-        fetchData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, page]);
+        const timer = setTimeout(() => {
+            fetchData();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [fetchData]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [searchTerm]);
 
     const handleCloseModal = () => {
         if (submitting) return; // don't allow closing mid-submit
@@ -116,16 +124,7 @@ const StaffAssignments = () => {
         }
     };
 
-    // Filter the current page's assignments by staff name or ward name
-    const filteredAssignments = assignments.filter((assignment) => {
-        if (!searchTerm.trim()) return true;
-        const term = searchTerm.toLowerCase();
-        const staffName = (assignment.staff_name || '').toLowerCase();
-        const wardName = (assignment.ward_name || '').toLowerCase();
-        return staffName.includes(term) || wardName.includes(term);
-    });
-
-    if (loading) {
+    if (initialLoading) {
         return (
             <div className="flex-1 flex items-center justify-center">
                 <Loader2 className="animate-spin text-indigo-600" size={32} />
@@ -193,14 +192,14 @@ const StaffAssignments = () => {
             </div>
 
             {/* Assignments Table */}
-            {filteredAssignments.length === 0 ? (
+            {assignments.length === 0 ? (
                 <div className="flex-1 bg-white border border-slate-200 rounded-2xl p-12 text-center flex flex-col items-center justify-center">
                     <Users size={48} className="text-slate-300 mb-3" />
                     <h3 className="text-base font-bold text-slate-800">
                         {searchTerm ? 'No Matching Assignments' : 'No Staff Assignments'}
                     </h3>
                     <p className="text-sm text-slate-400 mt-1">
-                        {searchTerm ? `No results for "${searchTerm}" on this page.` : 'No staff have been assigned to any ward yet.'}
+                        {searchTerm ? `No results for "${searchTerm}".` : 'No staff have been assigned to any ward yet.'}
                     </p>
                 </div>
             ) : (
@@ -217,7 +216,7 @@ const StaffAssignments = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-slate-700">
-                                {filteredAssignments.map((assignment) => (
+                                {assignments.map((assignment) => (
                                     <tr key={assignment.id} className="hover:bg-slate-50/40 transition-all duration-200">
                                         <td className="py-4 px-6">
                                             <div className="flex items-center gap-3">

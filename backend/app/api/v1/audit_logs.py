@@ -1,10 +1,11 @@
+from sqlalchemy import or_
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
-from app.models.models import User, AuditLog
+from app.models.models import User, AuditLog, Hospital
 from app.schemas.pagination import PaginatedResponse
 
 router = APIRouter()
@@ -21,19 +22,38 @@ def check_role(current_user: User, allowed_roles: list):
 def get_audit_logs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=200, description="Page size"),
+    search: str = Query(None, description="Search by action, entity, or performed-by user"),
+    action: str = Query(None, description="Filter by exact action"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Admin sees hospital audit logs
-    # Super Admin sees ALL audit logs across all hospitals
     check_role(current_user, ["admin"])
 
-    query = db.query(AuditLog).order_by(desc(AuditLog.timestamp))
+    query = (
+        db.query(AuditLog)
+        .outerjoin(User, AuditLog.user_id == User.id)
+        .outerjoin(Hospital, AuditLog.hospital_id == Hospital.id)
+        .order_by(desc(AuditLog.timestamp))
+    )
 
-    # Super admin sees all logs across all hospitals
     if current_user.role != "super_admin":
+        query = query.filter(AuditLog.hospital_id == current_user.hospital_id)
+
+    if action and action != "ALL":
+        query = query.filter(AuditLog.action == action)
+
+    if search:
+        search_tokens = search.strip().split()
+        search_term = f"%{'%'.join(search_tokens)}%" if search_tokens else f"%{search}%"
         query = query.filter(
-            AuditLog.hospital_id == current_user.hospital_id
+            or_(
+                AuditLog.action.ilike(search_term),
+                AuditLog.entity_name.ilike(search_term),
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+                User.username.ilike(search_term),
+                Hospital.name.ilike(search_term),
+            )
         )
 
     total_count = query.count()

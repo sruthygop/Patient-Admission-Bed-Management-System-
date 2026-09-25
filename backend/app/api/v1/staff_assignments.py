@@ -2,6 +2,7 @@ from uuid import UUID
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
 from app.models.models import User, StaffAssignment, Ward
@@ -31,6 +32,7 @@ class StaffAssignmentCreate(BaseModel):
 def get_staff_assignments(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    search: str = Query(None, description="Search by staff name, username, or ward name"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -39,11 +41,20 @@ def get_staff_assignments(
     query = db.query(StaffAssignment).options(
         joinedload(StaffAssignment.ward),
         joinedload(StaffAssignment.staff)
-    )
+    ).join(Ward, StaffAssignment.ward_id == Ward.id).join(User, StaffAssignment.staff_id == User.id)
 
     if current_user.role != "super_admin":
-        query = query.join(Ward).filter(
-            Ward.hospital_id == current_user.hospital_id
+        query = query.filter(Ward.hospital_id == current_user.hospital_id)
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+                User.username.ilike(search_term),
+                Ward.name.ilike(search_term),
+            )
         )
 
     total_count = query.count()

@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr, field_validator
 
@@ -275,6 +276,7 @@ def list_doctors(
 def get_all_users(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=200, description="Page size"),
+    search: str = Query(None, description="Search by name, username, or role"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -285,9 +287,21 @@ def get_all_users(
             detail="Admin only"
         )
     
-    query = db.query(User)
+    query = db.query(User).outerjoin(Hospital, User.hospital_id == Hospital.id)
     if current_user.role != "super_admin":
         query = query.filter(User.hospital_id == current_user.hospital_id)
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+                User.username.ilike(search_term),
+                User.role.ilike(search_term),
+                Hospital.name.ilike(search_term),
+            )
+        )
 
     total_count = query.count()
     skip = (page - 1) * page_size

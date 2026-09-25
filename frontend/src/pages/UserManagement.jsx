@@ -48,7 +48,7 @@ const UserManagement = () => {
         setLoading(true);
         try {
             const response = await api.get('/api/v1/auth/users', {
-                params: { page, page_size: pageSize }
+                params: { page, page_size: pageSize, search: searchTerm }
             });
             const data = response.data;
 
@@ -70,7 +70,7 @@ const UserManagement = () => {
         } finally {
             setLoading(false);
         }
-    }, [page, pageSize]);
+    }, [page, pageSize, searchTerm]);
 
     const fetchHospitals = useCallback(async () => {
         try {
@@ -97,6 +97,10 @@ const UserManagement = () => {
             fetchHospitals();
         }
     }, [isSuperAdmin, fetchUsers, fetchHospitals]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [searchTerm]);
 
     const handleOpenModal = (userToEdit = null) => {
         setError('');
@@ -166,6 +170,8 @@ const UserManagement = () => {
     };
 
     const handleToggleActive = async (userId, currentStatus) => {
+        const action = currentStatus ? 'deactivate' : 'activate';
+        if (!window.confirm(`Are you sure you want to ${action} this user?`)) return;
         setError('');
         setTogglingId(userId);
         try {
@@ -194,16 +200,7 @@ const UserManagement = () => {
         }
     };
 
-    // Filter users dynamically based on search
-    const filteredUsers = users.filter((u) => {
-        const term = searchTerm.toLowerCase();
-        const fullName = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
-        const username = (u.username || '').toLowerCase();
-        const hospitalName = (u.hospital_name || '').toLowerCase();
-        const role = (u.role || '').toLowerCase();
 
-        return fullName.includes(term) || username.includes(term) || hospitalName.includes(term) || role.includes(term);
-    });
 
     const totalPages = Math.ceil(totalUsers / pageSize) || 1;
 
@@ -294,8 +291,8 @@ const UserManagement = () => {
                                         <Loader2 className="animate-spin text-indigo-600 mx-auto" size={28} />
                                     </td>
                                 </tr>
-                            ) : filteredUsers.length > 0 ? (
-                                filteredUsers.map((u) => (
+                            ) : users.length > 0 ? (
+                                users.map((u) => (
                                     <tr key={u.id} className="hover:bg-slate-50/40 transition-all duration-200">
                                         <td className="py-4 px-6 align-middle">
                                             <div className="flex items-center gap-3">

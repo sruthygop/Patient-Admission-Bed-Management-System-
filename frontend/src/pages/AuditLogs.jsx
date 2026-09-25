@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, AlertCircle, Shield, Building2, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, AlertCircle, Shield, Building2, Search, X, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const PAGE_SIZE = 50;
 
@@ -17,6 +17,7 @@ const AuditLogs = () => {
     const [wards, setWards] = useState({});
     const [hospitals, setHospitals] = useState({});
     const [loading, setLoading] = useState(true);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [error, setError] = useState('');
 
     // Filtering State
@@ -25,79 +26,92 @@ const AuditLogs = () => {
 
     const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-    useEffect(() => {
-        const fetchAll = async () => {
-            setLoading(true);
-            try {
-                // Primary log fetch (paginated)
-                const logsRes = await api.get('/api/v1/audit-logs/', {
-                    params: { page, page_size: PAGE_SIZE }
+    const fetchAll = useCallback(async () => {
+        setLoading(true);
+        try {
+            // Primary log fetch (paginated, server-side search + action filter)
+            const logsRes = await api.get('/api/v1/audit-logs/', {
+                params: {
+                    page,
+                    page_size: PAGE_SIZE,
+                    search: searchTerm.trim() || undefined,
+                    action: selectedActionFilter !== 'ALL' ? selectedActionFilter : undefined,
+                }
+            });
+            setLogs(logsRes.data.items || []);
+            setTotalCount(logsRes.data.total_count || 0);
+
+            // Fetch metadata concurrently with failure isolation
+            const [usersRes, patientsRes, wardsRes, hospitalsRes] = await Promise.allSettled([
+                api.get('/api/v1/auth/users', { params: { page: 1, page_size: 200 } }),
+                api.get('/api/v1/patients/', { params: { page: 1, page_size: 1000 } }),
+                api.get('/api/v1/beds/wards'),
+                isSuperAdmin ? api.get('/api/v1/hospitals/') : Promise.reject('Not super_admin')
+            ]);
+
+            // Map Users
+            if (usersRes.status === 'fulfilled' && usersRes.value?.data) {
+                const usersMap = {};
+                usersRes.value.data.items.forEach(u => {
+                    usersMap[u.id] = `${u.first_name} ${u.last_name} (${u.username})`;
                 });
-                setLogs(logsRes.data.items || []);
-                setTotalCount(logsRes.data.total_count || 0);
+                setUsers(usersMap);
+            }
 
-                // Fetch metadata concurrently with failure isolation
-                const [usersRes, patientsRes, wardsRes, hospitalsRes] = await Promise.allSettled([
-                    api.get('/api/v1/auth/users'),
-                    api.get('/api/v1/patients/', { params: { page: 1, page_size: 1000 } }),
-                    api.get('/api/v1/beds/wards'),
-                    isSuperAdmin ? api.get('/api/v1/hospitals/') : Promise.reject('Not super_admin')
-                ]);
+            // Map Patients
+            if (patientsRes.status === 'fulfilled' && patientsRes.value?.data?.items) {
+                const patientsMap = {};
+                patientsRes.value.data.items.forEach(p => {
+                    patientsMap[p.id] = `${p.first_name} ${p.last_name}`;
+                });
+                setPatients(patientsMap);
+            }
 
-                // Map Users
-                if (usersRes.status === 'fulfilled' && usersRes.value?.data) {
-                    const usersMap = {};
-                    usersRes.value.data.items.forEach(u => {
-                        usersMap[u.id] = `${u.first_name} ${u.last_name} (${u.username})`;
-                    });
-                    setUsers(usersMap);
-                }
-
-                // Map Patients
-                if (patientsRes.status === 'fulfilled' && patientsRes.value?.data?.items) {
-                    const patientsMap = {};
-                    patientsRes.value.data.items.forEach(p => {
-                        patientsMap[p.id] = `${p.first_name} ${p.last_name}`;
-                    });
-                    setPatients(patientsMap);
-                }
-
-                // Map Wards, Rooms, Beds
-                if (wardsRes.status === 'fulfilled' && wardsRes.value?.data) {
-                    const wardsMap = {};
-                    wardsRes.value.data.forEach(w => {
-                        wardsMap[w.id] = w.name;
-                        w.rooms?.forEach(r => {
-                            wardsMap[r.id] = `Room ${r.room_number}`;
-                            r.beds?.forEach(b => {
-                                wardsMap[b.id] = `Bed ${b.bed_number}`;
-                            });
+            // Map Wards, Rooms, Beds
+            if (wardsRes.status === 'fulfilled' && wardsRes.value?.data) {
+                const wardsMap = {};
+                wardsRes.value.data.forEach(w => {
+                    wardsMap[w.id] = w.name;
+                    w.rooms?.forEach(r => {
+                        wardsMap[r.id] = `Room ${r.room_number}`;
+                        r.beds?.forEach(b => {
+                            wardsMap[b.id] = `Bed ${b.bed_number}`;
                         });
                     });
-                    setWards(wardsMap);
-                }
-
-                // Map Hospitals
-                if (hospitalsRes.status === 'fulfilled' && hospitalsRes.value?.data.items) {
-                    const hospitalsMap = {};
-                    hospitalsRes.value.data.items.forEach(h => {
-                        hospitalsMap[h.id] = `${h.name} (${h.code})`;
-                    });
-                    setHospitals(hospitalsMap);
-                }
-
-            } catch (err) {
-                console.error('Failed to load audit logs:', err);
-                setError('Could not retrieve audit logs from server.');
-            } finally {
-                setLoading(false);
+                });
+                setWards(wardsMap);
             }
-        };
 
-        if (user?.role === 'admin' || user?.role === 'super_admin') {
-            fetchAll();
+            // Map Hospitals
+            if (hospitalsRes.status === 'fulfilled' && hospitalsRes.value?.data.items) {
+                const hospitalsMap = {};
+                hospitalsRes.value.data.items.forEach(h => {
+                    hospitalsMap[h.id] = `${h.name} (${h.code})`;
+                });
+                setHospitals(hospitalsMap);
+            }
+
+        } catch (err) {
+            console.error('Failed to load audit logs:', err);
+            setError('Could not retrieve audit logs from server.');
+        } finally {
+            setLoading(false);
+            setInitialLoading(false);
         }
-    }, [user, isSuperAdmin, page]);
+    }, [page, searchTerm, selectedActionFilter, isSuperAdmin]);
+
+    useEffect(() => {
+        if (user?.role === 'admin' || user?.role === 'super_admin') {
+            const timer = setTimeout(() => {
+                fetchAll();
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [user, fetchAll]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [searchTerm, selectedActionFilter]);
 
     const getActionColor = (action = '') => {
         const act = action.toUpperCase();
@@ -153,19 +167,6 @@ const AuditLogs = () => {
     const resolveUser = (userId) => userId ? (users[userId] || userId) : 'System';
     const resolveHospital = (hospitalId) => hospitalId ? (hospitals[hospitalId] || hospitalId) : 'Global';
 
-    // Client-side filtering (applies only within the current page of results)
-    const filteredLogs = logs.filter(log => {
-        const matchesAction = selectedActionFilter === 'ALL' || log.action === selectedActionFilter;
-        const searchLower = searchTerm.toLowerCase();
-
-        const matchesSearch = !searchTerm ||
-            log.action?.toLowerCase().includes(searchLower) ||
-            log.entity_name?.toLowerCase().includes(searchLower) ||
-            resolveUser(log.user_id).toLowerCase().includes(searchLower);
-
-        return matchesAction && matchesSearch;
-    });
-
     const uniqueActions = ['ALL', ...new Set(logs.map(l => l.action))];
 
     if (user?.role !== 'admin' && user?.role !== 'super_admin') {
@@ -180,7 +181,7 @@ const AuditLogs = () => {
         );
     }
 
-    if (loading) {
+    if (initialLoading) {
         return (
             <div className="flex-1 flex items-center justify-center">
                 <Loader2 className="animate-spin text-indigo-600" size={32} />
@@ -208,11 +209,20 @@ const AuditLogs = () => {
                         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
                             type="text"
-                            placeholder="Search logs..."
+                            placeholder="Search by action, entity, hospital, or performed by..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
+                        {searchTerm && (
+                            <button
+                                type="button"
+                                onClick={() => setSearchTerm('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            >
+                                <X size={16} />
+                            </button>
+                        )}
                     </div>
                     <div className="relative flex items-center">
                         <Filter size={14} className="absolute left-3 text-slate-400" />
@@ -251,14 +261,14 @@ const AuditLogs = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-slate-700">
-                            {filteredLogs.length === 0 ? (
+                            {logs.length === 0 ? (
                                 <tr>
                                     <td colSpan={isSuperAdmin ? 7 : 6} className="py-8 text-center text-slate-400 text-sm">
                                         No matching audit logs found.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredLogs.map((log) => (
+                                logs.map((log) => (
                                     <tr key={log.id} className="hover:bg-slate-50/40 transition-all duration-200">
                                         <td className="py-4 px-6">
                                             <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${getActionColor(log.action)}`}>

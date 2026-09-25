@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, AlertCircle, CheckCircle2, Plus, Edit2, X, Building2, Shield, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Plus, Edit2, X, Building2, Shield, Search, ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
 
 const getErrorMessage = (err, fallback) => {
     const detail = err?.response?.data?.detail;
@@ -16,12 +16,15 @@ const HospitalManagement = () => {
     const { user } = useAuth();
     const [hospitals, setHospitals] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingHospital, setEditingHospital] = useState(null);
+    const [exporting, setExporting] = useState(false);
 
     const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState(''); // '', 'active', 'inactive'
 
     // Pagination state
     const [page, setPage] = useState(1);
@@ -44,7 +47,12 @@ const HospitalManagement = () => {
         setLoading(true);
         try {
             const response = await api.get('/api/v1/hospitals/', {
-                params: { page, page_size: pageSize }
+                params: {
+                    page,
+                    page_size: pageSize,
+                    search: searchTerm.trim() || undefined,
+                    is_active: statusFilter === '' ? undefined : statusFilter === 'active',
+                }
             });
             setHospitals(response.data.items || []);
             setTotalCount(response.data.total_count || 0);
@@ -53,17 +61,22 @@ const HospitalManagement = () => {
             setError(getErrorMessage(err, 'Could not retrieve hospitals.'));
         } finally {
             setLoading(false);
+            setInitialLoading(false);
         }
-    }, [page, pageSize]);
+    }, [page, pageSize, searchTerm, statusFilter]);
 
+    // Debounced fetch on search/filter change
     useEffect(() => {
-        fetchHospitals();
+        const timer = setTimeout(() => {
+            fetchHospitals();
+        }, 300);
+        return () => clearTimeout(timer);
     }, [fetchHospitals]);
 
-    // Reset to page 1 whenever the search term changes
+    // Reset to page 1 whenever search or status filter changes
     useEffect(() => {
         setPage(1);
-    }, [searchTerm]);
+    }, [searchTerm, statusFilter]);
 
     const handleOpenModal = (hospitalToEdit = null) => {
         setError('');
@@ -127,6 +140,8 @@ const HospitalManagement = () => {
     };
 
     const handleToggleActive = async (hospitalId, currentStatus) => {
+        const action = currentStatus ? 'deactivate' : 'activate';
+        if (!window.confirm(`Are you sure you want to ${action} this hospital?`)) return;
         setError('');
         setTogglingId(hospitalId);
         try {
@@ -143,12 +158,33 @@ const HospitalManagement = () => {
         }
     };
 
-    // Filter within the currently loaded page's hospitals (backend has no search param)
-    const filteredHospitals = hospitals.filter((h) => {
-        if (!searchTerm.trim()) return true;
-        const term = searchTerm.toLowerCase();
-        return (h.name || '').toLowerCase().includes(term) || (h.code || '').toLowerCase().includes(term);
-    });
+    const handleExportExcel = async () => {
+        setError('');
+        setExporting(true);
+        try {
+            const response = await api.get('/api/v1/hospitals/export/excel', {
+                params: {
+                    search: searchTerm.trim() || undefined,
+                    is_active: statusFilter === '' ? undefined : statusFilter === 'active',
+                },
+                responseType: 'blob',
+            });
+            const blob = new Blob([response.data]);
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `hospitals_export_${Date.now()}.xlsx`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Export failed:', err);
+            setError(getErrorMessage(err, 'Failed to export hospital data.'));
+        } finally {
+            setExporting(false);
+        }
+    };
 
     const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -164,7 +200,7 @@ const HospitalManagement = () => {
         );
     }
 
-    if (loading) {
+    if (initialLoading) {
         return (
             <div className="flex-1 flex items-center justify-center">
                 <Loader2 className="animate-spin text-indigo-600" size={32} />
@@ -193,18 +229,28 @@ const HospitalManagement = () => {
                     <h1 className="text-2xl font-bold text-slate-800">Hospital Management</h1>
                     <p className="text-sm text-slate-400 mt-1">Onboard and manage hospital tenants</p>
                 </div>
-                <button
-                    onClick={() => handleOpenModal()}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200"
-                >
-                    <Plus size={16} />
-                    Add New Hospital
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleExportExcel}
+                        disabled={exporting}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {exporting ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
+                        {exporting ? 'Exporting...' : 'Export Excel'}
+                    </button>
+                    <button
+                        onClick={() => handleOpenModal()}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all duration-200"
+                    >
+                        <Plus size={16} />
+                        Add New Hospital
+                    </button>
+                </div>
             </div>
 
-            {/* Search Bar */}
-            <div className="mb-4 flex items-center gap-3">
-                <div className="relative flex-1 max-w-md">
+            {/* Search + Filter Bar */}
+            <div className="mb-4 flex items-center gap-3 flex-wrap">
+                <div className="relative flex-1 min-w-[200px] max-w-md">
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                         type="text"
@@ -223,17 +269,27 @@ const HospitalManagement = () => {
                         </button>
                     )}
                 </div>
+
+                <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="py-2 px-3 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 shadow-sm"
+                >
+                    <option value="">All Statuses</option>
+                    <option value="active">Active Only</option>
+                    <option value="inactive">Inactive Only</option>
+                </select>
             </div>
 
             {/* Hospitals Table */}
-            {filteredHospitals.length === 0 ? (
+            {hospitals.length === 0 ? (
                 <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center flex flex-col items-center justify-center">
                     <Building2 size={48} className="text-slate-300 mb-3" />
                     <h3 className="text-base font-bold text-slate-800">
-                        {searchTerm ? 'No Matching Hospitals' : 'No Hospitals Found'}
+                        {searchTerm || statusFilter ? 'No Matching Hospitals' : 'No Hospitals Found'}
                     </h3>
                     <p className="text-sm text-slate-400 mt-1">
-                        {searchTerm ? `No results for "${searchTerm}" on this page.` : 'Click Add New Hospital to onboard one.'}
+                        {searchTerm || statusFilter ? 'Try adjusting your search or filter.' : 'Click Add New Hospital to onboard one.'}
                     </p>
                 </div>
             ) : (
@@ -250,12 +306,20 @@ const HospitalManagement = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {filteredHospitals.map((h) => (
+                                {hospitals.map((h) => (
                                     <tr key={h.id} className="hover:bg-slate-50/40 transition-all duration-200">
                                         <td className="py-4 px-6">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-                                                    <Building2 size={16} />
+                                                <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 overflow-hidden shrink-0">
+                                                    {h.logo_url ? (
+                                                        <img
+                                                            src={h.logo_url}
+                                                            alt={`${h.name} logo`}
+                                                            className="w-full h-full object-cover"
+                                                            onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                                                        />
+                                                    ) : null}
+                                                    <Building2 size={16} style={{ display: h.logo_url ? 'none' : 'flex' }} />
                                                 </div>
                                                 <div>
                                                     <p className="font-bold text-slate-800">{h.name}</p>
