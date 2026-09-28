@@ -235,6 +235,11 @@ const DoctorAssignments = () => {
                                                         <span className="text-sm font-semibold text-slate-700">
                                                             Dr. {doctor?.first_name} {doctor?.last_name}
                                                         </span>
+                                                        {doctor?.department && (
+                                                            <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded font-bold uppercase">
+                                                                {doctor.department}
+                                                            </span>
+                                                        )}
                                                         {da.notes && (
                                                             <span className="text-xs text-slate-400">— {da.notes}</span>
                                                         )}
@@ -305,7 +310,7 @@ const DoctorAssignments = () => {
                                     <option value="" disabled>Select doctor...</option>
                                     {doctors.map((d) => (
                                         <option key={d.id} value={d.id}>
-                                            Dr. {d.first_name} {d.last_name}
+                                            Dr. {d.first_name} {d.last_name}{d.department ? ` — ${d.department}` : ''}
                                         </option>
                                     ))}
                                 </select>

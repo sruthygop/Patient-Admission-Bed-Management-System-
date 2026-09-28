@@ -12,6 +12,20 @@ const getErrorMessage = (err, fallback) => {
     return fallback;
 };
 
+// NEW: department options, matching the backend's ALLOWED_DEPARTMENTS list
+const DEPARTMENT_OPTIONS = [
+    'Physician',
+    'Gynecology',
+    'Cardiology',
+    'Orthopedics',
+    'Pediatrics',
+    'Neurology',
+    'General Surgery',
+    'ENT',
+    'Dermatology',
+    'Psychiatry',
+];
+
 const UserManagement = () => {
     const { user } = useAuth();
     const isSuperAdmin = user?.role === 'super_admin';
@@ -42,6 +56,7 @@ const UserManagement = () => {
         first_name: '',
         last_name: '',
         hospital_id: '',
+        department: '', // NEW
     });
 
     const fetchUsers = useCallback(async () => {
@@ -115,6 +130,7 @@ const UserManagement = () => {
                 first_name: userToEdit.first_name || '',
                 last_name: userToEdit.last_name || '',
                 hospital_id: userToEdit.hospital_id || '',
+                department: userToEdit.department || '', // NEW
             });
         } else {
             setEditingUser(null);
@@ -126,15 +142,25 @@ const UserManagement = () => {
                 first_name: '',
                 last_name: '',
                 hospital_id: '',
+                department: '', // NEW
             });
         }
         setIsModalOpen(true);
     };
 
+    const isDoctorRole = (role) => role === 'doctor' || role === 'cmo'; // NEW
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setSuccess('');
+
+        // NEW: require department for doctor/cmo before hitting the API
+        if (isDoctorRole(formData.role) && !formData.department) {
+            setError('Please select a department for this role.');
+            return;
+        }
+
         setSubmitting(true);
 
         try {
@@ -143,6 +169,7 @@ const UserManagement = () => {
                     first_name: formData.first_name,
                     last_name: formData.last_name,
                     role: formData.role,
+                    department: isDoctorRole(formData.role) ? formData.department : null, // NEW
                 };
                 if (isSuperAdmin && formData.role !== 'super_admin') {
                     updatePayload.hospital_id = formData.hospital_id;
@@ -156,7 +183,11 @@ const UserManagement = () => {
                     setSubmitting(false);
                     return;
                 }
-                await api.post('/api/v1/auth/users/create', formData);
+                const createPayload = {
+                    ...formData,
+                    department: isDoctorRole(formData.role) ? formData.department : null, // NEW
+                };
+                await api.post('/api/v1/auth/users/create', createPayload);
                 setSuccess('User created successfully!');
             }
             await fetchUsers();
@@ -279,6 +310,7 @@ const UserManagement = () => {
                                 <th className="py-3.5 px-6">User</th>
                                 <th className="py-3.5 px-6">Email</th>
                                 <th className="py-3.5 px-6">Role</th>
+                                <th className="py-3.5 px-6">Department</th>
                                 {isSuperAdmin && <th className="py-3.5 px-6">Hospital</th>}
                                 <th className="py-3.5 px-6">Status</th>
                                 <th className="py-3.5 px-6 text-right">Actions</th>
@@ -287,7 +319,7 @@ const UserManagement = () => {
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={isSuperAdmin ? 6 : 5} className="py-12 text-center">
+                                    <td colSpan={isSuperAdmin ? 7 : 6} className="py-12 text-center">
                                         <Loader2 className="animate-spin text-indigo-600 mx-auto" size={28} />
                                     </td>
                                 </tr>
@@ -312,6 +344,9 @@ const UserManagement = () => {
                                             <span className={`inline-flex items-center px-2.5 py-1 rounded border text-[10px] font-bold uppercase leading-none whitespace-nowrap ${getRoleBadgeColor(u.role)}`}>
                                                 {u.role}
                                             </span>
+                                        </td>
+                                        <td className="py-4 px-6 align-middle">
+                                            <span className="text-xs text-slate-500">{u.department || '-'}</span>
                                         </td>
                                         {isSuperAdmin && (
                                             <td className="py-4 px-6 align-middle">
@@ -358,7 +393,7 @@ const UserManagement = () => {
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={isSuperAdmin ? 6 : 5} className="py-8 text-center text-slate-400 text-sm">
+                                    <td colSpan={isSuperAdmin ? 7 : 6} className="py-8 text-center text-slate-400 text-sm">
                                         {searchTerm ? `No users matching "${searchTerm}".` : 'No users found.'}
                                     </td>
                                 </tr>
@@ -514,7 +549,11 @@ const UserManagement = () => {
                                 </label>
                                 <select
                                     value={formData.role}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+                                    onChange={(e) => setFormData(prev => ({
+                                        ...prev,
+                                        role: e.target.value,
+                                        department: isDoctorRole(e.target.value) ? prev.department : '', // NEW: clear department if role isn't doctor/cmo
+                                    }))}
                                     className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
                                     required
                                 >
@@ -526,6 +565,26 @@ const UserManagement = () => {
                                     {isSuperAdmin && <option value="super_admin">Super Admin</option>}
                                 </select>
                             </div>
+
+                            {/* NEW: Department dropdown, only for doctor/cmo roles */}
+                            {isDoctorRole(formData.role) && (
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                                        Department <span className="text-red-500">*</span>
+                                    </label>
+                                    <select
+                                        value={formData.department}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                        required
+                                    >
+                                        <option value="" disabled>Select a department...</option>
+                                        {DEPARTMENT_OPTIONS.map((dept) => (
+                                            <option key={dept} value={dept}>{dept}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
                             <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
                                 <button

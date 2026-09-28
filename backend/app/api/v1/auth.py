@@ -34,6 +34,20 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login
 
 # ==================== PYDANTIC SCHEMAS ====================
 
+# NEW: allowed department values for doctors/CMOs
+ALLOWED_DEPARTMENTS = [
+    "Physician",
+    "Gynecology",
+    "Cardiology",
+    "Orthopedics",
+    "Pediatrics",
+    "Neurology",
+    "General Surgery",
+    "ENT",
+    "Dermatology",
+    "Psychiatry",
+]
+
 class ProfileUpdate(BaseModel):
     first_name: str
     last_name: str
@@ -64,6 +78,7 @@ class UserCreate(BaseModel):
     first_name: str
     last_name: str
     hospital_id: Optional[str] = None
+    department: Optional[str] = None  # NEW
 
     @field_validator('username')
     @classmethod
@@ -79,11 +94,30 @@ class UserCreate(BaseModel):
     def validate_password(cls, v: str) -> str:
         return validate_password_strength(v)
 
+    @field_validator('department')  # NEW
+    @classmethod
+    def validate_department(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == '':
+            return None
+        if v not in ALLOWED_DEPARTMENTS:
+            raise ValueError(f"Invalid department. Allowed: {', '.join(ALLOWED_DEPARTMENTS)}")
+        return v
+
 class UserUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    department: Optional[str] = None  # NEW
+
+    @field_validator('department')  # NEW
+    @classmethod
+    def validate_department(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == '':
+            return v
+        if v not in ALLOWED_DEPARTMENTS:
+            raise ValueError(f"Invalid department. Allowed: {', '.join(ALLOWED_DEPARTMENTS)}")
+        return v
 
 # ==================== HELPER DEPENDENCY ====================
 
@@ -160,9 +194,11 @@ def get_current_user_info(
         "role": current_user.role,
         "first_name": current_user.first_name,
         "last_name": current_user.last_name,
+        "department": current_user.department,  # NEW
         "is_active": current_user.is_active,
         "hospital_id": str(current_user.hospital_id) if current_user.hospital_id else None,
-        "hospital_name": current_user.hospital.name if current_user.hospital else "Global"
+        "hospital_name": current_user.hospital.name if current_user.hospital else "Global",
+        "hospital_logo_url": current_user.hospital.logo_url if current_user.hospital else None
     }
 
 
@@ -266,7 +302,8 @@ def list_doctors(
             "id": str(doc.id),
             "first_name": doc.first_name,
             "last_name": doc.last_name,
-            "email": doc.email
+            "email": doc.email,
+            "department": doc.department  # NEW
         }
         for doc in doctors
     ]
@@ -299,6 +336,7 @@ def get_all_users(
                 User.last_name.ilike(search_term),
                 User.username.ilike(search_term),
                 User.role.ilike(search_term),
+                User.department.ilike(search_term),
                 Hospital.name.ilike(search_term),
             )
         )
@@ -315,6 +353,7 @@ def get_all_users(
             "first_name": u.first_name,
             "last_name": u.last_name,
             "role": u.role,
+            "department": u.department,  # NEW
             "is_active": u.is_active,
             "hospital_id": str(u.hospital_id) if u.hospital_id else None,
             "hospital_name": u.hospital.name if u.hospital else "Global"
@@ -349,6 +388,13 @@ def create_user(
             detail=f"Invalid role. Allowed roles: {', '.join(allowed_roles)}"
         )
 
+    # NEW: require department when creating a doctor or cmo
+    if user_data.role in ["doctor", "cmo"] and not user_data.department:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Department is required for doctor and cmo roles"
+        )
+
     existing_username = db.query(User).filter(User.username == user_data.username).first()
     if existing_username:
         raise HTTPException(
@@ -381,6 +427,7 @@ def create_user(
         role=user_data.role,
         first_name=user_data.first_name,
         last_name=user_data.last_name,
+        department=user_data.department if user_data.role in ["doctor", "cmo"] else None,  # NEW
         hospital_id=target_hospital_id,
         is_active=True
     )
@@ -406,6 +453,7 @@ def create_user(
             "role": new_user.role,
             "first_name": new_user.first_name,
             "last_name": new_user.last_name,
+            "department": new_user.department,  # NEW
             "target_user_name": target_user_fullname,
             "performed_by_name": performer_name,
             "hospital_name": hospital_name
@@ -423,6 +471,7 @@ def create_user(
         "role": new_user.role,
         "first_name": new_user.first_name,
         "last_name": new_user.last_name,
+        "department": new_user.department,  # NEW
         "hospital_id": str(new_user.hospital_id) if new_user.hospital_id else None,
         "is_active": new_user.is_active,
         "message": f"User {new_user.username} created successfully"
@@ -461,6 +510,7 @@ def update_user(
         "first_name": user.first_name,
         "last_name": user.last_name,
         "role": user.role,
+        "department": user.department,  # NEW
         "is_active": user.is_active,
         "target_user_name": f"{user.first_name} {user.last_name}",
         "hospital_name": hospital_name
@@ -480,6 +530,8 @@ def update_user(
         user.role = user_data.role
     if user_data.is_active is not None:
         user.is_active = user_data.is_active
+    if user_data.department is not None:  # NEW
+        user.department = user_data.department
 
     performer_name = f"{current_user.first_name} {current_user.last_name} ({current_user.username})".strip()
     target_user_fullname = f"{user.first_name} {user.last_name}".strip()
@@ -488,6 +540,7 @@ def update_user(
         "first_name": user.first_name,
         "last_name": user.last_name,
         "role": user.role,
+        "department": user.department,  # NEW
         "is_active": user.is_active,
         "target_user_name": target_user_fullname,
         "performed_by_name": performer_name,
@@ -515,6 +568,7 @@ def update_user(
         "role": user.role,
         "first_name": user.first_name,
         "last_name": user.last_name,
+        "department": user.department,  # NEW
         "is_active": user.is_active,
         "message": "User updated successfully"
     }

@@ -159,6 +159,25 @@ const Sidebar = ({ isOpen, onClose }) => {
           </div>
         </div>
 
+        {/* Hospital Branding — shown for hospital-scoped users */}
+        {user?.hospital_name && user.hospital_name !== 'Global' && (
+          <div className="px-4 py-3 border-b border-slate-700/50 flex items-center gap-3">
+            {user?.hospital_logo_url ? (
+              <img
+                src={user.hospital_logo_url}
+                alt={user.hospital_name}
+                className="w-8 h-8 rounded-full object-cover border border-slate-600/40 shrink-0"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold text-xs uppercase shrink-0">
+                {user.hospital_name?.[0]}
+              </div>
+            )}
+            <span className="text-xs font-semibold text-slate-300 truncate">{user.hospital_name}</span>
+          </div>
+        )}
+
         {/* User Profile */}
         <div className="px-4 py-4 border-b border-slate-700/50">
           <button
