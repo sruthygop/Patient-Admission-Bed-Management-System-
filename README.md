@@ -38,12 +38,14 @@ and audit logging — across multiple hospitals with full data isolation between
 | | `POST` | `/api/v1/auth/users/create` | Create a new system user |
 | | `PUT` | `/api/v1/auth/users/{user_id}` | Update existing user details |
 | | `PUT` | `/api/v1/auth/admin/reset-password` | Admin resets any user's password |
-| **Hospitals** | `POST` | `/api/v1/hospitals/` | Create a new hospital tenant (Super Admin only) |
+| **Hospitals** | `POST` | `/api/v1/hospitals/` | Create a new hospital tenant (Super  Admin only) |
 | | `GET` | `/api/v1/hospitals/` | List all hospitals (Super Admin only) |
+| | `GET` | `/api/v1/hospitals/export/excel` | Export all hospitals to an Excel file (Super Admin only) |
 | | `GET` | `/api/v1/hospitals/{hospital_id}` | Get hospital detail (Super Admin only) |
 | | `PUT` | `/api/v1/hospitals/{hospital_id}` | Update hospital details (Super Admin only) |
 | **Patients** | `POST` | `/api/v1/patients/` | Register a new patient |
 | | `GET` | `/api/v1/patients/` | List patients with search and filter |
+| | `GET` | `/api/v1/patients/export` | Export patients to an Excel file |
 | | `GET` | `/api/v1/patients/{patient_id}` | Read single patient details |
 | | `PUT` | `/api/v1/patients/{patient_id}` | Update patient details |
 | | `DELETE` | `/api/v1/patients/{patient_id}` | Soft delete a patient |
@@ -62,10 +64,11 @@ and audit logging — across multiple hospitals with full data isolation between
 | | `GET` | `/api/v1/admissions/history/{patient_id}` | Get admission history for a patient |
 | **Dashboard** | `GET` | `/api/v1/dashboard/stats` | Real-time dashboard statistics |
 | **Audit Logs** | `GET` | `/api/v1/audit-logs/` | Full audit history (admin only; global for Super Admin) |
-| **Doctor Assignments** | `GET` | `/api/v1/doctor-assignments/doctors/list` | Get list of doctors for assignment |
-| | `GET` | `/api/v1/doctor-assignments/{admission_id}` | Get doctor assignments for an admission |
-| | `POST` | `/api/v1/doctor-assignments/` | Assign doctor to an admission |
-| | `DELETE` | `/api/v1/doctor-assignments/{assignment_id}` | Unassign a doctor |
+| **Doctor Assignments** | `GET` | `/api/v1/doctor-assignments/doctors/list` | Get list of doctors available for assignment |
+| | `GET` | `/api/v1/doctor-assignments/` | Get all active doctor assignments |
+| | `POST` | `/api/v1/doctor-assignments/` | Assign a doctor to an admission |
+| | `GET` | `/api/v1/doctor-assignments/{admission_id}` | Get doctor assignments for a specific admission |
+| | `DELETE` | `/api/v1/doctor-assignments/{assignment_id}` | Unassign a doctor from an admission |
 | **Staff Assignments** | `GET` | `/api/v1/staff-assignments/` | Get ward staff assignments |
 | | `POST` | `/api/v1/staff-assignments/` | Assign staff to a ward |
 | | `DELETE` | `/api/v1/staff-assignments/{assignment_id}` | Remove staff assignment |
@@ -164,7 +167,7 @@ pip install -r requirements.txt
 
 Open psql and run:
 
-``SQL
+```SQL
 CREATE DATABASE project_db;
 CREATE USER devuser WITH PASSWORD 'your_password';
 GRANT ALL PRIVILEGES ON DATABASE project_db TO devuser;
@@ -224,86 +227,86 @@ npm run dev
 
 Frontend runs at: http://localhost:5173
 
-```
+---
 
 ## Default Login Credentials
 
-Name	                    Email	           Role	               Hospital
-Super Admin	        superadmin@pabms.com	Super Admin	      — (global)
-System Administrator	admin@pabms.com	Admin	Settlement Sense       (SS-001)
-Robert Wilson (CMO)	cmo@pabms.com	CMO	Settlement Sense        (SS-001)
-Dr. John Smith	        smith@pabms.com	Doctor	Settlement Sense        (SS-001)
-Dr. Sarah Jones	        jones@pabms.com	Doctor	Settlement Sense        (SS-001)
-Mary Johnson	        mary@pabms.com	Nurse	Settlement Sense         (SS-001)
-John Williams	        john.nurse@pabms.com	Nurse Settlement Sense   (SS-001)
-Priya Nair	        priya@pabms.com	Nurse	Settlement Sense         (SS-001)
-Jane Doe	        reception@pabms.com	ReceptionistSettlement Sense (SS-001)
-Metro Admin	        admin@metrocare.com	Admin	Metro Care       (MCH-002)
-Dr. Alex Brown	        doctor@metrocare.com	Doctor	Metro Care       (MCH-002)
-Lisa Green	        nurse@metrocare.com	Nurse	Metro Care       (MCH-002)
+| Name | Email | Role | Hospital |
+|---|---|---|---|
+| Super Admin | superadmin@pabms.com | Super Admin | — (global) |
+| System Administrator | admin@pabms.com | Admin | Settlement Sense (SS-001) |
+| Robert Wilson (CMO) | cmo@pabms.com | CMO | Settlement Sense (SS-001) |
+| Dr. John Smith | smith@pabms.com | Doctor | Settlement Sense (SS-001) |
+| Dr. Sarah Jones | jones@pabms.com | Doctor | Settlement Sense (SS-001) |
+| Mary Johnson | mary@pabms.com | Nurse | Settlement Sense (SS-001) |
+| John Williams | john.nurse@pabms.com | Nurse | Settlement Sense (SS-001) |
+| Priya Nair | priya@pabms.com | Nurse | Settlement Sense (SS-001) |
+| Jane Doe | reception@pabms.com | Receptionist | Settlement Sense (SS-001) |
+| Metro Admin | admin@metrocare.com | Admin | Metro Care (MCH-002) |
+| Dr. Alex Brown | doctor@metrocare.com | Doctor | Metro Care (MCH-002) |
+| Lisa Green | nurse@metrocare.com | Nurse | Metro Care (MCH-002) |
 
->Default credentials are set during database initialization via db_init.py. 
- Please change all passwords after first login in a production environment.
+> Default credentials are set during database initialization via db_init.py. 
+> Please change all passwords after first login in a production environment.
 
-```
+---
 
 ## Database Schema
 
 The system uses 11 tables:
 
-Table	           Description
+| Table | Description |
+|---|---|
+| `hospitals` | Hospital tenants — each row is a separate hospital in the system |
+| `users` | System users with roles (super_admin, admin, cmo, doctor, nurse, receptionist), scoped to a hospital |
+| `patients` | Patient records with soft delete, scoped to a hospital |
+| `wards` | Hospital wards, scoped to a hospital |
+| `rooms` | Rooms within wards |
+| `beds` | Beds within rooms with status tracking |
+| `admissions` | Patient admission records |
+| `doctor_assignments` | Doctor to admission assignments |
+| `staff_assignments` | Staff to ward shift assignments |
+| `prescriptions` | Medication prescriptions tied to an admission |
+| `audit_logs` | Complete system activity history, scoped to a hospital (Super Admin sees all) |
 
-hospitals	     Hospital tenants — each row is a separate hospital in the system
-users	             System users with roles (super_admin, admin, cmo, doctor, nurse, receptionist), scoped to a hospital
-patients	     Patient records with soft delete, scoped to a hospital
-wards	             Hospital wards, scoped to a hospital
-rooms	             Rooms within wards
-beds	             Beds within rooms with status tracking
-admissions	     Patient admission records
-doctor_assignments   Doctor to admission assignments
-staff_assignments    Staff to ward shift assignments
-prescriptions	     Medication prescriptions tied to an admission
-audit_logs	     Complete system activity history, scoped to a hospital (Super Admin sees all) 
-
-```
+---
 
 ## Documentation
 
 The `docs/` folder contains supporting project documents:
 
-File	                Description
+| File | Description |
+|---|---|
+| `docs/requirements.md` | Full system requirements document covering modules, roles, and non-functional requirements |
+| `docs/schema.sql` | Complete PostgreSQL database schema reflecting the current live database |
+| `docs/ER Diagram` | Entity Relationship diagram showing all tables and their relationships |
 
-docs/requirements.md	Full system requirements document covering modules, roles, and non-functional requirements
-docs/schema.sql	        Complete PostgreSQL database schema reflecting the current live database
-docs/ER Diagram	        Entity Relationship diagram showing all tables and their relationships
-
-```
+---
 
 ## Database Backup & Recovery
 
 The database is backed up automatically using a scheduled script.
 
-File                        Description
-
-backend/scripts/backup_db.py    Python script that creates a full PostgreSQL dump using pg_dump
-backend/scripts/run_backup.bat  Batch file that runs backup_db.py and logs output
-backend/backups/                Folder where .sql backup files and backup_log.txt are stored (excluded from git)
-RECOVERY.md                     Step-by-step guide for restoring the database from a backup file
+| File | Description |
+|---|---|
+| `backend/scripts/backup_db.py` | Python script that creates a full PostgreSQL dump using pg_dump |
+| `backend/scripts/run_backup.bat` | Batch file that runs backup_db.py and logs output |
+| `backend/backups/` | Folder where .sql backup files and backup_log.txt are stored (excluded from git) |
+| `RECOVERY.md` | Step-by-step guide for restoring the database from a backup file |
 
 Backups run daily via Windows Task Scheduler and are kept for 30 days (older backups are automatically deleted).
 
 See `RECOVERY.md` for full restore instructions in case of data loss.
 
+---
+
 ## Environment Variables
 
-Variable	            Required	          Description
-
-DATABASE_URL	             Yes	       PostgreSQL connection string
-SECRET_KEY	             Yes	       JWT signing secret key
-ALGORITHM	             Yes	       JWT algorithm (HS256)
-ACCESS_TOKEN_EXPIRE_MINUTES  Yes	       Token expiry in minutes
-PROJECT_NAME	             No   	       Application display name
-API_V1_STR	             No	               API version prefix
-
-
-```
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `SECRET_KEY` | Yes | JWT signing secret key |
+| `ALGORITHM` | Yes | JWT algorithm (HS256) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Yes | Token expiry in minutes |
+| `PROJECT_NAME` | No | Application display name |
+| `API_V1_STR` | No | API version prefix |
