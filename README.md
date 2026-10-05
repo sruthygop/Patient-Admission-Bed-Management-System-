@@ -279,7 +279,22 @@ docs/ER Diagram	        Entity Relationship diagram showing all tables and their
 
 ```
 
-##Environment Variables
+## Database Backup & Recovery
+
+The database is backed up automatically using a scheduled script.
+
+File                        Description
+
+backend/scripts/backup_db.py    Python script that creates a full PostgreSQL dump using pg_dump
+backend/scripts/run_backup.bat  Batch file that runs backup_db.py and logs output
+backend/backups/                Folder where .sql backup files and backup_log.txt are stored (excluded from git)
+RECOVERY.md                     Step-by-step guide for restoring the database from a backup file
+
+Backups run daily via Windows Task Scheduler and are kept for 30 days (older backups are automatically deleted).
+
+See `RECOVERY.md` for full restore instructions in case of data loss.
+
+## Environment Variables
 
 Variable	            Required	          Description
 
