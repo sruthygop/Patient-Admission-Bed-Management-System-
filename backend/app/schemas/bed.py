@@ -2,10 +2,16 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict, field_validator
+from app.core.sanitize import sanitize_text
 
 # --- Bed Schemas ---
 class BedBase(BaseModel):
     bed_number: str = Field(..., max_length=10)
+
+    @field_validator('bed_number')
+    @classmethod
+    def sanitize_bed_number(cls, v: str) -> str:
+        return sanitize_text(v)
 
 class BedCreate(BedBase):
     room_id: UUID
@@ -35,6 +41,11 @@ class RoomBase(BaseModel):
     room_number: str = Field(..., max_length=10)
     room_type: str = Field(..., max_length=30, description="e.g. Private, Semi-Private, General")
 
+    @field_validator('room_number', 'room_type')
+    @classmethod
+    def sanitize_room_fields(cls, v: str) -> str:
+        return sanitize_text(v)
+
 class RoomCreate(RoomBase):
     ward_id: UUID
 
@@ -52,6 +63,11 @@ class WardBase(BaseModel):
     name: str = Field(..., max_length=50)
     type: str = Field(..., max_length=30, description="e.g. ICU, General, Pediatrics, Maternity")
     capacity: int = Field(..., gt=0)
+
+    @field_validator('name', 'type')
+    @classmethod
+    def sanitize_ward_fields(cls, v: str) -> str:
+        return sanitize_text(v)
 
 class WardCreate(WardBase):
     pass
@@ -74,4 +90,4 @@ class WardOccupancyResponse(BaseModel):
     occupied_beds: int
     available_beds: int
     maintenance_beds: int
-    occupancy_rate: float # Percentage
+    occupancy_rate: float  # Percentage

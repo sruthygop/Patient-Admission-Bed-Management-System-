@@ -1,139 +1,43 @@
 from uuid import UUID
+from typing import Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
-from app.models.models import User, DoctorAssignment, Admission
+from app.models.models import User, DoctorAssignment, Admission, Patient
 from app.core.audit import log_audit
 
 router = APIRouter()
 
+
+class DoctorAssignmentCreate(BaseModel):
+    admission_id: UUID
+    doctor_id: UUID
+    notes: Optional[str] = None
+
+
 def check_role(current_user: User, allowed_roles: list):
-    if current_user.role not in allowed_roles:
+    extended_roles = allowed_roles + ["super_admin"]
+    if current_user.role not in extended_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Action forbidden. Required roles: {', '.join(allowed_roles)}"
         )
 
-@router.get("/{admission_id}")
-def get_doctor_assignments(
-    admission_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # All roles can view doctor assignments
-    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
-    
-    admission = db.query(Admission).filter(Admission.id == admission_id).first()
-    if not admission:
+
+def verify_admission_hospital_access(admission: Admission, current_user: User):
+    if current_user.role == "super_admin":
+        return
+    admission_hospital_id = getattr(admission, "hospital_id", None)
+    if admission_hospital_id is None and admission.patient:
+        admission_hospital_id = admission.patient.hospital_id
+    if admission_hospital_id != current_user.hospital_id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Admission not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied — admission belongs to a different hospital"
         )
-    
-    assignments = db.query(DoctorAssignment).filter(
-        DoctorAssignment.admission_id == admission_id
-    ).all()
-    
-    result = []
-    for a in assignments:
-        doctor = db.query(User).filter(User.id == a.doctor_id).first()
-        result.append({
-            "id": str(a.id),
-            "admission_id": str(a.admission_id),
-            "doctor_id": str(a.doctor_id),
-            "doctor_name": f"{doctor.first_name} {doctor.last_name}" if doctor else "Unknown",
-            "doctor_username": doctor.username if doctor else "Unknown",
-            "assigned_at": a.assigned_at.isoformat(),
-            "unassigned_at": a.unassigned_at.isoformat() if a.unassigned_at else None,
-            "notes": a.notes
-        })
-    return result
-
-
-@router.post("/")
-def assign_doctor(
-    admission_id: UUID,
-    doctor_id: UUID,
-    notes: str = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # Admin, CMO and Nurse can assign doctors
-    # Receptionist cannot assign doctors
-    check_role(current_user, ["admin", "cmo", "nurse"])
-
-    admission = db.query(Admission).filter(Admission.id == admission_id).first()
-    if not admission:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Admission not found"
-        )
-
-    doctor = db.query(User).filter(
-        User.id == doctor_id,
-        User.role == "doctor"
-    ).first()
-    if not doctor:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Doctor not found"
-        )
-
-    assignment = DoctorAssignment(
-        admission_id=admission_id,
-        doctor_id=doctor_id,
-        notes=notes or "Assigned by staff"
-    )
-    db.add(assignment)
-    db.commit()
-    db.refresh(assignment)
-
-    log_audit(db, current_user.id, "DOCTOR_ASSIGNED", "doctor_assignments",
-              assignment.id, None, {
-                  "admission_id": str(admission_id),
-                  "doctor_id": str(doctor_id)
-              })
-    db.commit()
-
-    return {
-        "id": str(assignment.id),
-        "admission_id": str(assignment.admission_id),
-        "doctor_id": str(assignment.doctor_id),
-        "doctor_name": f"{doctor.first_name} {doctor.last_name}",
-        "assigned_at": assignment.assigned_at.isoformat(),
-        "notes": assignment.notes
-    }
-
-
-@router.delete("/{assignment_id}")
-def unassign_doctor(
-    assignment_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # Admin, CMO and Nurse can unassign doctors
-    check_role(current_user, ["admin", "cmo", "nurse"])
-
-    assignment = db.query(DoctorAssignment).filter(
-        DoctorAssignment.id == assignment_id
-    ).first()
-    if not assignment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Assignment not found"
-        )
-
-    assignment.unassigned_at = datetime.now(timezone.utc)
-    db.commit()
-
-    log_audit(db, current_user.id, "DOCTOR_UNASSIGNED", "doctor_assignments",
-              assignment.id, {"unassigned_at": None},
-              {"unassigned_at": assignment.unassigned_at.isoformat()})
-    db.commit()
-
-    return {"message": "Doctor unassigned successfully"}
 
 
 @router.get("/doctors/list")
@@ -141,13 +45,18 @@ def get_doctors_list(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # All roles can view doctors list
     check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
-    doctors = db.query(User).filter(
-        User.role == "doctor",
-        User.is_active == True
-    ).all()
-
+    if current_user.role == "super_admin":
+        doctors = db.query(User).filter(
+            User.role == "doctor",
+            User.is_active == True
+        ).all()
+    else:
+        doctors = db.query(User).filter(
+            User.role == "doctor",
+            User.is_active == True,
+            User.hospital_id == current_user.hospital_id
+        ).all()
     return [
         {
             "id": str(d.id),
@@ -158,3 +67,234 @@ def get_doctors_list(
         }
         for d in doctors
     ]
+
+
+@router.get("/")
+def get_all_active_assignments(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Returns all currently active (not unassigned) doctor assignments, scoped by hospital."""
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
+
+    query = db.query(DoctorAssignment).filter(DoctorAssignment.unassigned_at == None)
+
+    if current_user.role != "super_admin":
+        query = query.filter(DoctorAssignment.hospital_id == current_user.hospital_id)
+
+    total_count = query.count()
+    skip = (page - 1) * page_size
+    assignments = query.order_by(DoctorAssignment.assigned_at.desc()).offset(skip).limit(page_size).all()
+
+    items = []
+    for a in assignments:
+        doctor = db.query(User).filter(User.id == a.doctor_id).first()
+        admission = db.query(Admission).filter(Admission.id == a.admission_id).first()
+        patient = None
+        if admission:
+            patient = db.query(Patient).filter(Patient.id == admission.patient_id).first()
+        items.append({
+            "id": str(a.id),
+            "admission_id": str(a.admission_id),
+            "doctor_id": str(a.doctor_id),
+            "doctor_name": f"Dr. {doctor.first_name} {doctor.last_name}" if doctor else "Unknown",
+            "patient_name": f"{patient.first_name} {patient.last_name}" if patient else "Unknown",
+            "assigned_at": a.assigned_at.isoformat() if a.assigned_at else None,
+            "notes": a.notes
+        })
+
+    return {
+        "items": items,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size
+    }
+
+
+@router.get("/{admission_id}")
+def get_doctor_assignments(
+    admission_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    check_role(current_user, ["admin", "doctor", "cmo", "nurse", "receptionist"])
+    admission = db.query(Admission).filter(Admission.id == admission_id).first()
+    if not admission:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Admission not found"
+        )
+    verify_admission_hospital_access(admission, current_user)
+    assignments = db.query(DoctorAssignment).filter(
+        DoctorAssignment.admission_id == admission_id
+    ).all()
+    result = []
+    for a in assignments:
+        doctor = db.query(User).filter(User.id == a.doctor_id).first()
+        result.append({
+            "id": str(a.id),
+            "admission_id": str(a.admission_id),
+            "doctor_id": str(a.doctor_id),
+            "doctor_name": f"Dr. {doctor.first_name} {doctor.last_name}" if doctor else "Unknown",
+            "doctor_username": doctor.username if doctor else "Unknown",
+            "assigned_at": a.assigned_at.isoformat() if a.assigned_at else None,
+            "unassigned_at": a.unassigned_at.isoformat() if a.unassigned_at else None,
+            "notes": a.notes
+        })
+    return result
+
+
+@router.post("/")
+def assign_doctor(
+    payload: DoctorAssignmentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    check_role(current_user, ["admin", "cmo", "nurse"])
+    admission = db.query(Admission).filter(Admission.id == payload.admission_id).first()
+    if not admission:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Admission not found"
+        )
+
+    # BLOCK ASSIGNING TO DISCHARGED ADMISSION
+    if admission.discharge_date is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot assign a doctor to a discharged admission"
+        )
+
+    verify_admission_hospital_access(admission, current_user)
+    doctor = db.query(User).filter(
+        User.id == payload.doctor_id,
+        User.role == "doctor",
+        User.is_active == True
+    ).first()
+    if not doctor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Doctor not found"
+        )
+    if current_user.role != "super_admin" and doctor.hospital_id != current_user.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied — doctor belongs to a different hospital"
+        )
+
+    # BLOCK DUPLICATE ACTIVE ASSIGNMENT
+    existing_assignment = db.query(DoctorAssignment).filter(
+        DoctorAssignment.admission_id == payload.admission_id,
+        DoctorAssignment.doctor_id == payload.doctor_id,
+        DoctorAssignment.unassigned_at == None
+    ).first()
+    if existing_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This doctor is already actively assigned to this admission"
+        )
+
+    target_hospital_id = current_user.hospital_id or getattr(doctor, "hospital_id", None)
+    assignment = DoctorAssignment(
+        admission_id=payload.admission_id,
+        doctor_id=payload.doctor_id,
+        hospital_id=target_hospital_id,
+        notes=payload.notes or "Assigned by staff"
+    )
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+
+    # Fetch patient details for clean audit logging
+    patient = db.query(Patient).filter(Patient.id == admission.patient_id).first()
+    patient_name = f"{patient.first_name} {patient.last_name}" if patient else "Unknown"
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="DOCTOR_ASSIGNED",
+        entity_name="doctor_assignments",
+        entity_id=assignment.id,
+        old_values=None,
+        new_values={
+            "doctor_id": str(payload.doctor_id),
+            "doctor_name": f"Dr. {doctor.first_name} {doctor.last_name}",
+            "patient_id": str(admission.patient_id),
+            "patient_name": patient_name,
+            "admission_id": str(payload.admission_id)
+        },
+        hospital_id=target_hospital_id
+    )
+    db.commit()
+    return {
+        "id": str(assignment.id),
+        "admission_id": str(assignment.admission_id),
+        "doctor_id": str(assignment.doctor_id),
+        "doctor_name": f"Dr. {doctor.first_name} {doctor.last_name}",
+        "assigned_at": assignment.assigned_at.isoformat() if assignment.assigned_at else None,
+        "notes": assignment.notes
+    }
+
+
+@router.delete("/{assignment_id}")
+def unassign_doctor(
+    assignment_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    check_role(current_user, ["admin", "cmo", "nurse"])
+    assignment = db.query(DoctorAssignment).filter(
+        DoctorAssignment.id == assignment_id
+    ).first()
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    if current_user.role != "super_admin" and getattr(assignment, "hospital_id", None):
+        if assignment.hospital_id != current_user.hospital_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied — assignment belongs to a different hospital"
+            )
+
+    # Fetch doctor, admission, and patient info for audit details
+    doctor = db.query(User).filter(User.id == assignment.doctor_id).first()
+    doctor_name = f"Dr. {doctor.first_name} {doctor.last_name}" if doctor else "Unknown"
+
+    admission = db.query(Admission).filter(Admission.id == assignment.admission_id).first()
+    patient_name = "Unknown"
+    patient_id = None
+    if admission:
+        patient_id = str(admission.patient_id)
+        patient = db.query(Patient).filter(Patient.id == admission.patient_id).first()
+        if patient:
+            patient_name = f"{patient.first_name} {patient.last_name}"
+
+    assignment.unassigned_at = datetime.now(timezone.utc)
+    db.commit()
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="DOCTOR_UNASSIGNED",
+        entity_name="doctor_assignments",
+        entity_id=assignment.id,
+        old_values={
+            "doctor_name": doctor_name,
+            "patient_name": patient_name,
+            "patient_id": patient_id,
+            "unassigned_at": None
+        },
+        new_values={
+            "doctor_name": doctor_name,
+            "patient_name": patient_name,
+            "patient_id": patient_id,
+            "unassigned_at": assignment.unassigned_at.isoformat()
+        },
+        hospital_id=getattr(assignment, "hospital_id", None)
+    )
+    db.commit()
+    return {"message": "Doctor unassigned successfully"}

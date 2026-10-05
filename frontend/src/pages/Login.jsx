@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 
@@ -8,7 +8,18 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [loading, setLoading] = useState(false);
+
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('expired') === 'true') {
+      setSessionExpired(true);
+      // Clean the URL so refreshing doesn't keep re-showing the message
+      window.history.replaceState({}, '', '/login');
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -58,6 +69,12 @@ const Login = () => {
               <p className="text-xs text-slate-500 mt-1">PABMS — Inpatient Healthcare Module</p>
             </div>
           </div>
+
+          {sessionExpired && !error && (
+            <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm text-center">
+              Your session has expired. Please log in again.
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm text-center">

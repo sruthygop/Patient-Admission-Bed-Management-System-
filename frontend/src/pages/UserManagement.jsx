@@ -1,16 +1,52 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, AlertCircle, CheckCircle2, Plus, Edit2, X, Users, Shield } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Plus, Edit2, X, Users, Shield, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+
+const getErrorMessage = (err, fallback) => {
+    const detail = err.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+        return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+    }
+    return fallback;
+};
+
+// NEW: department options, matching the backend's ALLOWED_DEPARTMENTS list
+const DEPARTMENT_OPTIONS = [
+    'Physician',
+    'Gynecology',
+    'Cardiology',
+    'Orthopedics',
+    'Pediatrics',
+    'Neurology',
+    'General Surgery',
+    'ENT',
+    'Dermatology',
+    'Psychiatry',
+];
 
 const UserManagement = () => {
     const { user } = useAuth();
+    const isSuperAdmin = user?.role === 'super_admin';
+
     const [users, setUsers] = useState([]);
+    const [hospitals, setHospitals] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [togglingId, setTogglingId] = useState(null);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
+
+    // Search state
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Pagination state
+    const [page, setPage] = useState(1);
+    const [pageSize] = useState(10);
+    const [totalUsers, setTotalUsers] = useState(0);
 
     const [formData, setFormData] = useState({
         username: '',
@@ -19,34 +55,82 @@ const UserManagement = () => {
         role: 'nurse',
         first_name: '',
         last_name: '',
+        hospital_id: '',
+        department: '', // NEW
     });
 
-    const fetchUsers = async () => {
+    const fetchUsers = useCallback(async () => {
+        setLoading(true);
         try {
-            const response = await api.get('/api/v1/auth/users');
-            setUsers(response.data);
+            const response = await api.get('/api/v1/auth/users', {
+                params: { page, page_size: pageSize, search: searchTerm }
+            });
+            const data = response.data;
+
+            if (data && Array.isArray(data.items)) {
+                setUsers(data.items);
+                setTotalUsers(data.total_count || data.items.length);
+            } else if (Array.isArray(data)) {
+                setUsers(data);
+                setTotalUsers(data.length);
+            } else {
+                setUsers([]);
+                setTotalUsers(0);
+            }
         } catch (err) {
             console.error('Failed to load users:', err);
-            setError('Could not retrieve users.');
+            setError(getErrorMessage(err, 'Could not retrieve users.'));
+            setUsers([]);
+            setTotalUsers(0);
         } finally {
             setLoading(false);
         }
-    };
+    }, [page, pageSize, searchTerm]);
+
+    const fetchHospitals = useCallback(async () => {
+        try {
+            const response = await api.get('/api/v1/hospitals/');
+            const data = response.data;
+            if (Array.isArray(data.items)) {
+                setHospitals(data.items);
+            } else if (data && Array.isArray(data.hospitals)) {
+                setHospitals(data.hospitals);
+            } else if (data && Array.isArray(data.data)) {
+                setHospitals(data.data);
+            } else {
+                setHospitals([]);
+            }
+        } catch (err) {
+            console.error('Failed to load hospitals:', err);
+            setHospitals([]);
+        }
+    }, []);
 
     useEffect(() => {
         fetchUsers();
-    }, []);
+        if (isSuperAdmin) {
+            fetchHospitals();
+        }
+    }, [isSuperAdmin, fetchUsers, fetchHospitals]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [searchTerm]);
 
     const handleOpenModal = (userToEdit = null) => {
+        setError('');
+        setSuccess('');
         if (userToEdit) {
             setEditingUser(userToEdit);
             setFormData({
-                username: userToEdit.username,
-                email: userToEdit.email,
+                username: userToEdit.username || '',
+                email: userToEdit.email || '',
                 password: '',
-                role: userToEdit.role,
-                first_name: userToEdit.first_name,
-                last_name: userToEdit.last_name,
+                role: userToEdit.role || 'nurse',
+                first_name: userToEdit.first_name || '',
+                last_name: userToEdit.last_name || '',
+                hospital_id: userToEdit.hospital_id || '',
+                department: userToEdit.department || '', // NEW
             });
         } else {
             setEditingUser(null);
@@ -57,36 +141,70 @@ const UserManagement = () => {
                 role: 'nurse',
                 first_name: '',
                 last_name: '',
+                hospital_id: '',
+                department: '', // NEW
             });
         }
         setIsModalOpen(true);
     };
 
+    const isDoctorRole = (role) => role === 'doctor' || role === 'cmo'; // NEW
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setSuccess('');
+
+        // NEW: require department for doctor/cmo before hitting the API
+        if (isDoctorRole(formData.role) && !formData.department) {
+            setError('Please select a department for this role.');
+            return;
+        }
+
+        setSubmitting(true);
+
         try {
             if (editingUser) {
-                await api.put(`/api/v1/auth/users/${editingUser.id}`, {
+                const updatePayload = {
                     first_name: formData.first_name,
                     last_name: formData.last_name,
                     role: formData.role,
-                });
+                    department: isDoctorRole(formData.role) ? formData.department : null, // NEW
+                };
+                if (isSuperAdmin && formData.role !== 'super_admin') {
+                    updatePayload.hospital_id = formData.hospital_id;
+                }
+
+                await api.put(`/api/v1/auth/users/${editingUser.id}`, updatePayload);
                 setSuccess('User updated successfully!');
             } else {
-                await api.post('/api/v1/auth/users/create', formData);
+                if (isSuperAdmin && formData.role !== 'super_admin' && !formData.hospital_id) {
+                    setError('Please select a hospital for this user.');
+                    setSubmitting(false);
+                    return;
+                }
+                const createPayload = {
+                    ...formData,
+                    department: isDoctorRole(formData.role) ? formData.department : null, // NEW
+                };
+                await api.post('/api/v1/auth/users/create', createPayload);
                 setSuccess('User created successfully!');
             }
-            fetchUsers();
+            await fetchUsers();
             setIsModalOpen(false);
             setTimeout(() => setSuccess(''), 4000);
         } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to save user.');
+            setError(getErrorMessage(err, 'Failed to save user.'));
+        } finally {
+            setSubmitting(false);
         }
     };
 
     const handleToggleActive = async (userId, currentStatus) => {
+        const action = currentStatus ? 'deactivate' : 'activate';
+        if (!window.confirm(`Are you sure you want to ${action} this user?`)) return;
+        setError('');
+        setTogglingId(userId);
         try {
             await api.put(`/api/v1/auth/users/${userId}`, {
                 is_active: !currentStatus
@@ -95,13 +213,16 @@ const UserManagement = () => {
             fetchUsers();
             setTimeout(() => setSuccess(''), 4000);
         } catch (err) {
-            setError('Failed to update user status.');
+            setError(getErrorMessage(err, 'Failed to update user status.'));
+        } finally {
+            setTogglingId(null);
         }
     };
 
     const getRoleBadgeColor = (role) => {
         switch (role) {
             case 'admin': return 'bg-red-50 text-red-700 border-red-200';
+            case 'super_admin': return 'bg-slate-800 text-white border-slate-900';
             case 'doctor': return 'bg-blue-50 text-blue-700 border-blue-200';
             case 'cmo': return 'bg-purple-50 text-purple-700 border-purple-200';
             case 'nurse': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
@@ -110,7 +231,11 @@ const UserManagement = () => {
         }
     };
 
-    if (user?.role !== 'admin') {
+
+
+    const totalPages = Math.ceil(totalUsers / pageSize) || 1;
+
+    if (user?.role !== 'admin' && user?.role !== 'super_admin' && user?.role !== 'cmo') {
         return (
             <div className="flex-1 flex items-center justify-center">
                 <div className="text-center">
@@ -118,14 +243,6 @@ const UserManagement = () => {
                     <h3 className="text-base font-bold text-slate-800">Access Restricted</h3>
                     <p className="text-sm text-slate-400 mt-1">Only administrators can manage users.</p>
                 </div>
-            </div>
-        );
-    }
-
-    if (loading) {
-        return (
-            <div className="flex-1 flex items-center justify-center">
-                <Loader2 className="animate-spin text-indigo-600" size={32} />
             </div>
         );
     }
@@ -149,7 +266,9 @@ const UserManagement = () => {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800">User Management</h1>
-                    <p className="text-sm text-slate-400 mt-1">Add, edit and manage system users</p>
+                    <p className="text-sm text-slate-400 mt-1">
+                        {isSuperAdmin ? 'Add, edit and manage users across all hospitals' : 'Add, edit and manage system users'}
+                    </p>
                 </div>
                 <button
                     onClick={() => handleOpenModal()}
@@ -160,76 +279,153 @@ const UserManagement = () => {
                 </button>
             </div>
 
+            {/* Search Bar */}
+            <div className="mb-4 flex items-center gap-3">
+                <div className="relative flex-1 max-w-md">
+                    <input
+                        type="text"
+                        placeholder="Search by name, username, hospital, or role..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 shadow-sm"
+                    />
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
+                </div>
+                {searchTerm && (
+                    <button
+                        onClick={() => setSearchTerm('')}
+                        className="text-xs text-slate-500 hover:text-slate-700 font-semibold underline"
+                    >
+                        Clear Search
+                    </button>
+                )}
+            </div>
+
             {/* Users Table */}
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm border-collapse">
                         <thead>
                             <tr className="border-b border-slate-200 bg-slate-50 text-slate-400 font-bold text-xs uppercase tracking-wider">
-                                <th className="py-3 px-6">User</th>
-                                <th className="py-3 px-6">Email</th>
-                                <th className="py-3 px-6">Role</th>
-                                <th className="py-3 px-6">Status</th>
-                                <th className="py-3 px-6 text-right">Actions</th>
+                                <th className="py-3.5 px-6">User</th>
+                                <th className="py-3.5 px-6">Email</th>
+                                <th className="py-3.5 px-6">Role</th>
+                                <th className="py-3.5 px-6">Department</th>
+                                {isSuperAdmin && <th className="py-3.5 px-6">Hospital</th>}
+                                <th className="py-3.5 px-6">Status</th>
+                                <th className="py-3.5 px-6 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {users.map((u) => (
-                                <tr key={u.id} className="hover:bg-slate-50/40 transition-all duration-200">
-                                    <td className="py-4 px-6">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm uppercase">
-                                                {u.first_name?.[0]}{u.last_name?.[0]}
-                                            </div>
-                                            <div>
-                                                <p className="font-bold text-slate-800">{u.first_name} {u.last_name}</p>
-                                                <p className="text-xs text-slate-400">@{u.username}</p>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="py-4 px-6">
-                                        <span className="text-sm text-slate-600">{u.email}</span>
-                                    </td>
-                                    <td className="py-4 px-6">
-                                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${getRoleBadgeColor(u.role)}`}>
-                                            {u.role}
-                                        </span>
-                                    </td>
-                                    <td className="py-4 px-6">
-                                        {u.is_active ? (
-                                            <span className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-bold uppercase">
-                                                ● Active
-                                            </span>
-                                        ) : (
-                                            <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full text-[10px] font-bold uppercase">
-                                                ● Inactive
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="py-4 px-6 text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={() => handleOpenModal(u)}
-                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all duration-200"
-                                                title="Edit user"
-                                            >
-                                                <Edit2 size={16} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleToggleActive(u.id, u.is_active)}
-                                                className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 ${u.is_active
-                                                    ? 'text-red-600 hover:bg-red-50'
-                                                    : 'text-emerald-600 hover:bg-emerald-50'
-                                                    }`}
-                                            >
-                                                {u.is_active ? 'Deactivate' : 'Activate'}
-                                            </button>
-                                        </div>
+                            {loading ? (
+                                <tr>
+                                    <td colSpan={isSuperAdmin ? 7 : 6} className="py-12 text-center">
+                                        <Loader2 className="animate-spin text-indigo-600 mx-auto" size={28} />
                                     </td>
                                 </tr>
-                            ))}
+                            ) : users.length > 0 ? (
+                                users.map((u) => (
+                                    <tr key={u.id} className="hover:bg-slate-50/40 transition-all duration-200">
+                                        <td className="py-4 px-6 align-middle">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm uppercase shrink-0">
+                                                    {u.first_name?.[0]}{u.last_name?.[0]}
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-slate-800 leading-tight">{u.first_name} {u.last_name}</p>
+                                                    <p className="text-xs text-slate-400 mt-0.5">@{u.username}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="py-4 px-6 align-middle">
+                                            <span className="text-sm text-slate-600">{u.email}</span>
+                                        </td>
+                                        <td className="py-4 px-6 align-middle">
+                                            <span className={`inline-flex items-center px-2.5 py-1 rounded border text-[10px] font-bold uppercase leading-none whitespace-nowrap ${getRoleBadgeColor(u.role)}`}>
+                                                {u.role}
+                                            </span>
+                                        </td>
+                                        <td className="py-4 px-6 align-middle">
+                                            <span className="text-xs text-slate-500">{u.department || '-'}</span>
+                                        </td>
+                                        {isSuperAdmin && (
+                                            <td className="py-4 px-6 align-middle">
+                                                <span className="text-xs text-slate-500">{u.hospital_name || 'Global'}</span>
+                                            </td>
+                                        )}
+                                        <td className="py-4 px-6 align-middle">
+                                            <div className="flex items-center">
+                                                {u.is_active ? (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[11px] font-bold uppercase leading-none whitespace-nowrap">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                                        Active
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full text-[11px] font-bold uppercase leading-none whitespace-nowrap">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>
+                                                        Inactive
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="py-4 px-6 align-middle text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    onClick={() => handleOpenModal(u)}
+                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all duration-200"
+                                                    title="Edit user"
+                                                >
+                                                    <Edit2 size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleToggleActive(u.id, u.is_active)}
+                                                    disabled={togglingId === u.id}
+                                                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${u.is_active
+                                                        ? 'text-red-600 hover:bg-red-50'
+                                                        : 'text-emerald-600 hover:bg-emerald-50'
+                                                        }`}
+                                                >
+                                                    {togglingId === u.id ? '...' : (u.is_active ? 'Deactivate' : 'Activate')}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan={isSuperAdmin ? 7 : 6} className="py-8 text-center text-slate-400 text-sm">
+                                        {searchTerm ? `No users matching "${searchTerm}".` : 'No users found.'}
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <p className="text-xs text-slate-500">
+                        Showing {users.length > 0 ? (page - 1) * pageSize + 1 : 0} to {Math.min(page * pageSize, totalUsers)} of {totalUsers} users
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            disabled={page === 1}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            <ChevronLeft size={16} />
+                        </button>
+                        <span className="text-xs font-semibold text-slate-600 px-2">
+                            Page {page} of {totalPages}
+                        </span>
+                        <button
+                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                            disabled={page >= totalPages}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            <ChevronRight size={16} />
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -246,7 +442,7 @@ const UserManagement = () => {
                                     {editingUser ? 'Edit User' : 'Add New User'}
                                 </h3>
                             </div>
-                            <button onClick={() => setIsModalOpen(false)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200">
+                            <button onClick={() => setIsModalOpen(false)} disabled={submitting} className="p-1 rounded-lg text-slate-400 hover:bg-slate-200 disabled:opacity-50">
                                 <X size={20} />
                             </button>
                         </div>
@@ -280,48 +476,71 @@ const UserManagement = () => {
                                 </div>
                             </div>
 
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                                    Username {!editingUser && <span className="text-red-500">*</span>}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={formData.username}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
+                                    placeholder="e.g. dr_smith"
+                                    required={!editingUser}
+                                    disabled={Boolean(editingUser)}
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                                    Email Address {!editingUser && <span className="text-red-500">*</span>}
+                                </label>
+                                <input
+                                    type="email"
+                                    value={formData.email}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
+                                    placeholder="e.g. john@hospital.com"
+                                    required={!editingUser}
+                                    disabled={Boolean(editingUser)}
+                                />
+                            </div>
+
                             {!editingUser && (
-                                <>
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
-                                            Username <span className="text-red-500">*</span>
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={formData.username}
-                                            onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
-                                            placeholder="e.g. dr_smith"
-                                            required
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
-                                            Email Address <span className="text-red-500">*</span>
-                                        </label>
-                                        <input
-                                            type="email"
-                                            value={formData.email}
-                                            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
-                                            placeholder="e.g. john@hospital.com"
-                                            required
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
-                                            Password <span className="text-red-500">*</span>
-                                        </label>
-                                        <input
-                                            type="password"
-                                            value={formData.password}
-                                            onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
-                                            placeholder="Min 8 characters"
-                                            required
-                                        />
-                                    </div>
-                                </>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                                        Password <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={formData.password}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                        placeholder="Min 8 characters"
+                                        required
+                                    />
+                                </div>
+                            )}
+
+                            {isSuperAdmin && (
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                                        Hospital {formData.role !== 'super_admin' && <span className="text-red-500">*</span>}
+                                    </label>
+                                    <select
+                                        value={formData.hospital_id}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, hospital_id: e.target.value }))}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                        required={formData.role !== 'super_admin'}
+                                    >
+                                        <option value="" disabled>Select a hospital...</option>
+                                        {hospitals.map((h) => (
+                                            <option key={h.id} value={h.id}>
+                                                {h.name} ({h.code})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             )}
 
                             <div className="space-y-1">
@@ -330,7 +549,11 @@ const UserManagement = () => {
                                 </label>
                                 <select
                                     value={formData.role}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+                                    onChange={(e) => setFormData(prev => ({
+                                        ...prev,
+                                        role: e.target.value,
+                                        department: isDoctorRole(e.target.value) ? prev.department : '', // NEW: clear department if role isn't doctor/cmo
+                                    }))}
                                     className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
                                     required
                                 >
@@ -339,21 +562,45 @@ const UserManagement = () => {
                                     <option value="receptionist">Receptionist</option>
                                     <option value="cmo">CMO / Department Head</option>
                                     <option value="admin">Admin</option>
+                                    {isSuperAdmin && <option value="super_admin">Super Admin</option>}
                                 </select>
                             </div>
+
+                            {/* NEW: Department dropdown, only for doctor/cmo roles */}
+                            {isDoctorRole(formData.role) && (
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                                        Department <span className="text-red-500">*</span>
+                                    </label>
+                                    <select
+                                        value={formData.department}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:border-indigo-500"
+                                        required
+                                    >
+                                        <option value="" disabled>Select a department...</option>
+                                        {DEPARTMENT_OPTIONS.map((dept) => (
+                                            <option key={dept} value={dept}>{dept}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
                             <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
                                 <button
                                     type="button"
                                     onClick={() => setIsModalOpen(false)}
                                     className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50"
+                                    disabled={submitting}
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md"
+                                    disabled={submitting}
+                                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md flex items-center gap-2 disabled:opacity-50"
                                 >
+                                    {submitting && <Loader2 size={16} className="animate-spin" />}
                                     {editingUser ? 'Save Changes' : 'Create User'}
                                 </button>
                             </div>

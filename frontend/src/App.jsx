@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
@@ -13,9 +14,11 @@ import Profile from './pages/Profile';
 import Analytics from './pages/Analytics';
 import Prescriptions from './pages/Prescriptions';
 import UserManagement from './pages/UserManagement';
+import HospitalManagement from './pages/HospitalManagement';
 
 function ProtectedLayout({ children }) {
   const { user, loading } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (loading) {
     return (
@@ -34,10 +37,10 @@ function ProtectedLayout({ children }) {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar />
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Navbar />
-        <main className="flex-1 overflow-y-auto p-6">
+        <Navbar onMenuClick={() => setSidebarOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
           {children}
         </main>
       </div>
@@ -139,6 +142,14 @@ function AppRoutes() {
         element={
           <ProtectedLayout>
             <UserManagement />
+          </ProtectedLayout>
+        }
+      />
+      <Route
+        path="/hospital-management"
+        element={
+          <ProtectedLayout>
+            <HospitalManagement />
           </ProtectedLayout>
         }
       />

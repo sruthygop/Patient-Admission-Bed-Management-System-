@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, BedDouble, LogOut, ShieldAlert, ClipboardList, UserCog, Stethoscope, ChevronDown, Settings, X, Eye, EyeOff, BarChart2, Pill } from 'lucide-react';
+import { LayoutDashboard, Users, BedDouble, LogOut, ShieldAlert, ClipboardList, UserCog, Stethoscope, ChevronDown, Settings, X, Eye, EyeOff, BarChart2, Pill, Building2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen, onClose }) => {
   const { user, logout } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -29,15 +29,16 @@ const Sidebar = () => {
   const [resetError, setResetError] = useState('');
 
   const links = [
-    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
+    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
     { to: '/patients', label: 'Patients', icon: Users, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
     { to: '/beds', label: 'Bed & Admissions', icon: BedDouble, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
     { to: '/doctor-assignments', label: 'Doctor Assignments', icon: Stethoscope, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
     { to: '/staff-assignments', label: 'Staff Assignments', icon: UserCog, roles: ['admin', 'cmo', 'doctor', 'nurse', 'receptionist'] },
     { to: '/prescriptions', label: 'Prescriptions', icon: Pill, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
     { to: '/analytics', label: 'Analytics', icon: BarChart2, roles: ['admin', 'doctor', 'cmo', 'nurse', 'receptionist'] },
-    { to: '/audit-logs', label: 'Audit Logs', icon: ClipboardList, roles: ['admin'] },
-    { to: '/user-management', label: 'User Management', icon: UserCog, roles: ['admin'] },
+    { to: '/audit-logs', label: 'Audit Logs', icon: ClipboardList, roles: ['admin', 'super_admin'] },
+    { to: '/user-management', label: 'User Management', icon: UserCog, roles: ['super_admin', 'admin'] },
+    { to: '/hospital-management', label: 'Hospital Management', icon: Building2, roles: ['super_admin'] },
   ];
 
   const visibleLinks = links.filter((link) => link.roles.includes(user?.role));
@@ -45,10 +46,10 @@ const Sidebar = () => {
   const handleOpenProfile = async () => {
     setShowUserMenu(false);
     setShowProfileModal(true);
-    if (user?.role === 'admin') {
+    if (user?.role === 'admin' || user?.role === 'super_admin') {
       try {
-        const res = await api.get('/api/v1/auth/users');
-        setAllUsers(res.data.filter(u => u.id !== user.id));
+        const res = await api.get('/api/v1/auth/users', { params: { page: 1, page_size: 200 } });
+        setAllUsers(res.data.items.filter(u => u.id !== user.id));
       } catch (err) {
         console.error('Failed to load users');
       }
@@ -119,7 +120,25 @@ const Sidebar = () => {
 
   return (
     <>
-      <aside className="w-64 bg-[#0d1528] text-slate-100 flex flex-col h-screen sticky top-0 border-r border-slate-700/50">
+      {/* Mobile backdrop overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 z-40 md:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0d1528] text-slate-100 flex flex-col h-screen border-r border-slate-700/50 transform transition-transform duration-300 ease-in-out md:sticky md:top-0 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+      >
+        {/* Mobile close button */}
+        <button
+          onClick={onClose}
+          className="md:hidden absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-all duration-200"
+        >
+          <X size={18} />
+        </button>
 
         {/* Brand Header */}
         <div className="p-5 border-b border-slate-700/50 flex items-center gap-3">
@@ -140,6 +159,25 @@ const Sidebar = () => {
           </div>
         </div>
 
+        {/* Hospital Branding — shown for hospital-scoped users */}
+        {user?.hospital_name && user.hospital_name !== 'Global' && (
+          <div className="px-4 py-3 border-b border-slate-700/50 flex items-center gap-3">
+            {user?.hospital_logo_url ? (
+              <img
+                src={user.hospital_logo_url}
+                alt={user.hospital_name}
+                className="w-8 h-8 rounded-full object-cover border border-slate-600/40 shrink-0"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold text-xs uppercase shrink-0">
+                {user.hospital_name?.[0]}
+              </div>
+            )}
+            <span className="text-xs font-semibold text-slate-300 truncate">{user.hospital_name}</span>
+          </div>
+        )}
+
         {/* User Profile */}
         <div className="px-4 py-4 border-b border-slate-700/50">
           <button
@@ -147,7 +185,7 @@ const Sidebar = () => {
             className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-slate-800/50 transition-all duration-200"
           >
             <div className="w-9 h-9 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold uppercase text-sm select-none shrink-0">
-              {user?.first_name[0]}{user?.last_name[0]}
+              {user?.first_name?.[0]}{user?.last_name?.[0]}
             </div>
             <div className="overflow-hidden flex-1 text-left">
               <h2 className="font-semibold text-sm text-slate-200 truncate leading-snug">{user?.first_name} {user?.last_name}</h2>
@@ -174,13 +212,13 @@ const Sidebar = () => {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {/* <p className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold px-3 mb-2">Navigation</p> */}
           {visibleLinks.map((link) => {
             const Icon = link.icon;
             return (
               <NavLink
                 key={link.to}
                 to={link.to}
+                onClick={onClose}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${isActive
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 font-semibold'
@@ -229,7 +267,7 @@ const Sidebar = () => {
               {/* User Info */}
               <div className="flex items-center gap-4 pb-4 border-b border-slate-100">
                 <div className="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-lg uppercase">
-                  {user?.first_name[0]}{user?.last_name[0]}
+                  {user?.first_name?.[0]}{user?.last_name?.[0]}
                 </div>
                 <div>
                   <h4 className="font-bold text-slate-800">{user?.first_name} {user?.last_name}</h4>
@@ -339,8 +377,8 @@ const Sidebar = () => {
                 </form>
               </div>
 
-              {/* Admin Reset Password Section */}
-              {user?.role === 'admin' && (
+              {/* Admin / Super Admin Reset Password Section */}
+              {(user?.role === 'admin' || user?.role === 'super_admin') && (
                 <div className="border-t border-slate-100 pt-4">
                   <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
                     Admin — Reset User Password

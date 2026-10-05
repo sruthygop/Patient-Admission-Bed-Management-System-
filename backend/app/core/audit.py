@@ -10,7 +10,8 @@ def log_audit(
     entity_name: str,
     entity_id: UUID,
     old_values: Optional[dict] = None,
-    new_values: Optional[dict] = None
+    new_values: Optional[dict] = None,
+    hospital_id: Optional[UUID] = None
 ) -> AuditLog:
     """
     Creates an audit log entry in the database.
@@ -22,7 +23,8 @@ def log_audit(
         entity_name=entity_name,
         entity_id=entity_id,
         old_values=old_values,
-        new_values=new_values
+        new_values=new_values,
+        hospital_id=hospital_id
     )
     db.add(db_log)
     return db_log

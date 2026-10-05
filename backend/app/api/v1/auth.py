@@ -1,18 +1,52 @@
+import re
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from jose import JWTError, jwt
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, EmailStr, field_validator
+
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.core.config import settings
-from app.models.models import User
+from app.core.limiter import limiter
+from app.models.models import User, Hospital
+from app.core.audit import log_audit
+
+def validate_password_strength(password: str) -> str:
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if not re.search(r'[A-Z]', password):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not re.search(r'[a-z]', password):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not re.search(r'\d', password):
+        raise ValueError("Password must contain at least one number")
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', password):
+        raise ValueError("Password must contain at least one special character")
+    return password
 
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
+
+# ==================== PYDANTIC SCHEMAS ====================
+
+# NEW: allowed department values for doctors/CMOs
+ALLOWED_DEPARTMENTS = [
+    "Physician",
+    "Gynecology",
+    "Cardiology",
+    "Orthopedics",
+    "Pediatrics",
+    "Neurology",
+    "General Surgery",
+    "ENT",
+    "Dermatology",
+    "Psychiatry",
+]
 
 class ProfileUpdate(BaseModel):
     first_name: str
@@ -22,23 +56,70 @@ class PasswordChange(BaseModel):
     current_password: str
     new_password: str
 
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        return validate_password_strength(v)
+
 class AdminPasswordReset(BaseModel):
     user_id: str
     new_password: str
 
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        return validate_password_strength(v)
+
 class UserCreate(BaseModel):
     username: str
-    email: str
+    email: EmailStr
     password: str
     role: str
     first_name: str
     last_name: str
+    hospital_id: Optional[str] = None
+    department: Optional[str] = None  # NEW
+
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        if not re.match(r'^[a-zA-Z0-9_]+$', v):
+            raise ValueError("Username can only contain letters, numbers, and underscores (no spaces)")
+        if len(v) < 3:
+            raise ValueError("Username must be at least 3 characters")
+        return v
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return validate_password_strength(v)
+
+    @field_validator('department')  # NEW
+    @classmethod
+    def validate_department(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == '':
+            return None
+        if v not in ALLOWED_DEPARTMENTS:
+            raise ValueError(f"Invalid department. Allowed: {', '.join(ALLOWED_DEPARTMENTS)}")
+        return v
 
 class UserUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    department: Optional[str] = None  # NEW
+
+    @field_validator('department')  # NEW
+    @classmethod
+    def validate_department(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == '':
+            return v
+        if v not in ALLOWED_DEPARTMENTS:
+            raise ValueError(f"Invalid department. Allowed: {', '.join(ALLOWED_DEPARTMENTS)}")
+        return v
+
+# ==================== HELPER DEPENDENCY ====================
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -62,9 +143,12 @@ def get_current_user(
         raise credentials_exception
     return user
 
+# ==================== AUTH & USER ENDPOINTS ====================
 
 @router.post("/login")
+@limiter.limit("5/minute")
 def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
@@ -93,7 +177,9 @@ def login(
         "token_type": "bearer",
         "role": user.role,
         "username": user.username,
-        "email": user.email
+        "email": user.email,
+        "hospital_id": str(user.hospital_id) if user.hospital_id else None,
+        "hospital_name": user.hospital.name if user.hospital else "Global"
     }
 
 
@@ -108,7 +194,11 @@ def get_current_user_info(
         "role": current_user.role,
         "first_name": current_user.first_name,
         "last_name": current_user.last_name,
-        "is_active": current_user.is_active
+        "department": current_user.department,  # NEW
+        "is_active": current_user.is_active,
+        "hospital_id": str(current_user.hospital_id) if current_user.hospital_id else None,
+        "hospital_name": current_user.hospital.name if current_user.hospital else "Global",
+        "hospital_logo_url": current_user.hospital.logo_url if current_user.hospital else None
     }
 
 
@@ -118,8 +208,32 @@ def update_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    old_values = {
+        "first_name": current_user.first_name,
+        "last_name": current_user.last_name
+    }
+
     current_user.first_name = profile_data.first_name
     current_user.last_name = profile_data.last_name
+
+    hospital_name = current_user.hospital.name if current_user.hospital else "Global"
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="USER_PROFILE_UPDATED",
+        entity_name="users",
+        entity_id=current_user.id,
+        old_values=old_values,
+        new_values={
+            "first_name": profile_data.first_name,
+            "last_name": profile_data.last_name,
+            "user_name": f"{current_user.first_name} {current_user.last_name} ({current_user.username})",
+            "hospital_name": hospital_name
+        },
+        hospital_id=current_user.hospital_id
+    )
+
     db.commit()
     db.refresh(current_user)
     return {
@@ -129,7 +243,9 @@ def update_profile(
         "role": current_user.role,
         "first_name": current_user.first_name,
         "last_name": current_user.last_name,
-        "is_active": current_user.is_active
+        "is_active": current_user.is_active,
+        "hospital_id": str(current_user.hospital_id) if current_user.hospital_id else None,
+        "hospital_name": current_user.hospital.name if current_user.hospital else "Global"
     }
 
 
@@ -145,13 +261,27 @@ def change_password(
             detail="Current password is incorrect"
         )
 
-    if len(password_data.new_password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be at least 8 characters"
-        )
 
     current_user.password_hash = get_password_hash(password_data.new_password)
+
+    hospital_name = current_user.hospital.name if current_user.hospital else "Global"
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="USER_PASSWORD_CHANGED",
+        entity_name="users",
+        entity_id=current_user.id,
+        old_values=None,
+        new_values={
+            "status": "password_changed",
+            "username": current_user.username,
+            "user_name": f"{current_user.first_name} {current_user.last_name}",
+            "hospital_name": hospital_name
+        },
+        hospital_id=current_user.hospital_id
+    )
+
     db.commit()
     return {"message": "Password changed successfully"}
 
@@ -161,13 +291,19 @@ def list_doctors(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    doctors = db.query(User).filter(User.role == "doctor", User.is_active == True).all()
+    query = db.query(User).filter(User.role.in_(["doctor", "cmo"]), User.is_active == True)
+    
+    if current_user.role != "super_admin":
+        query = query.filter(User.hospital_id == current_user.hospital_id)
+        
+    doctors = query.all()
     return [
         {
             "id": str(doc.id),
             "first_name": doc.first_name,
             "last_name": doc.last_name,
-            "email": doc.email
+            "email": doc.email,
+            "department": doc.department  # NEW
         }
         for doc in doctors
     ]
@@ -175,17 +311,41 @@ def list_doctors(
 
 @router.get("/users")
 def get_all_users(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Page size"),
+    search: str = Query(None, description="Search by name, username, or role"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Admin and CMO can view all users
-    if current_user.role not in ["admin", "cmo"]:
+    allowed_roles = ["admin", "cmo", "super_admin"]
+    if current_user.role not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only"
         )
-    users = db.query(User).all()
-    return [
+    
+    query = db.query(User).outerjoin(Hospital, User.hospital_id == Hospital.id)
+    if current_user.role != "super_admin":
+        query = query.filter(User.hospital_id == current_user.hospital_id)
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+                User.username.ilike(search_term),
+                User.role.ilike(search_term),
+                User.department.ilike(search_term),
+                Hospital.name.ilike(search_term),
+            )
+        )
+
+    total_count = query.count()
+    skip = (page - 1) * page_size
+    users = query.offset(skip).limit(page_size).all()
+
+    items = [
         {
             "id": str(u.id),
             "username": u.username,
@@ -193,10 +353,20 @@ def get_all_users(
             "first_name": u.first_name,
             "last_name": u.last_name,
             "role": u.role,
-            "is_active": u.is_active
+            "department": u.department,  # NEW
+            "is_active": u.is_active,
+            "hospital_id": str(u.hospital_id) if u.hospital_id else None,
+            "hospital_name": u.hospital.name if u.hospital else "Global"
         }
         for u in users
     ]
+
+    return {
+        "items": items,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size
+    }
 
 
 @router.post("/users/create")
@@ -205,8 +375,7 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Only admin can create new users
-    if current_user.role != "admin":
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only"
@@ -217,6 +386,13 @@ def create_user(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid role. Allowed roles: {', '.join(allowed_roles)}"
+        )
+
+    # NEW: require department when creating a doctor or cmo
+    if user_data.role in ["doctor", "cmo"] and not user_data.department:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Department is required for doctor and cmo roles"
         )
 
     existing_username = db.query(User).filter(User.username == user_data.username).first()
@@ -233,11 +409,16 @@ def create_user(
             detail="Email already exists"
         )
 
-    if len(user_data.password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters"
-        )
+
+    if current_user.role == "super_admin":
+        target_hospital_id = user_data.hospital_id
+        if not target_hospital_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="super_admin must specify hospital_id when creating a user"
+            )
+    else:
+        target_hospital_id = current_user.hospital_id
 
     new_user = User(
         username=user_data.username,
@@ -246,9 +427,40 @@ def create_user(
         role=user_data.role,
         first_name=user_data.first_name,
         last_name=user_data.last_name,
+        department=user_data.department if user_data.role in ["doctor", "cmo"] else None,  # NEW
+        hospital_id=target_hospital_id,
         is_active=True
     )
     db.add(new_user)
+    db.flush()
+
+    hospital_obj = db.query(Hospital).filter(Hospital.id == target_hospital_id).first() if target_hospital_id else None
+    hospital_name = hospital_obj.name if hospital_obj else "Global"
+
+    performer_name = f"{current_user.first_name} {current_user.last_name} ({current_user.username})".strip()
+    target_user_fullname = f"{new_user.first_name} {new_user.last_name}".strip()
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="USER_CREATED",
+        entity_name="users",
+        entity_id=new_user.id,
+        old_values=None,
+        new_values={
+            "username": new_user.username,
+            "email": new_user.email,
+            "role": new_user.role,
+            "first_name": new_user.first_name,
+            "last_name": new_user.last_name,
+            "department": new_user.department,  # NEW
+            "target_user_name": target_user_fullname,
+            "performed_by_name": performer_name,
+            "hospital_name": hospital_name
+        },
+        hospital_id=target_hospital_id
+    )
+
     db.commit()
     db.refresh(new_user)
 
@@ -259,6 +471,8 @@ def create_user(
         "role": new_user.role,
         "first_name": new_user.first_name,
         "last_name": new_user.last_name,
+        "department": new_user.department,  # NEW
+        "hospital_id": str(new_user.hospital_id) if new_user.hospital_id else None,
         "is_active": new_user.is_active,
         "message": f"User {new_user.username} created successfully"
     }
@@ -271,8 +485,7 @@ def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Only admin can update users
-    if current_user.role != "admin":
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only"
@@ -284,6 +497,24 @@ def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+
+    if current_user.role != "super_admin" and user.hospital_id != current_user.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot update users belonging to another hospital"
+        )
+
+    hospital_name = user.hospital.name if user.hospital else "Global"
+
+    old_values = {
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "role": user.role,
+        "department": user.department,  # NEW
+        "is_active": user.is_active,
+        "target_user_name": f"{user.first_name} {user.last_name}",
+        "hospital_name": hospital_name
+    }
 
     if user_data.first_name is not None:
         user.first_name = user_data.first_name
@@ -299,6 +530,33 @@ def update_user(
         user.role = user_data.role
     if user_data.is_active is not None:
         user.is_active = user_data.is_active
+    if user_data.department is not None:  # NEW
+        user.department = user_data.department
+
+    performer_name = f"{current_user.first_name} {current_user.last_name} ({current_user.username})".strip()
+    target_user_fullname = f"{user.first_name} {user.last_name}".strip()
+
+    new_values = {
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "role": user.role,
+        "department": user.department,  # NEW
+        "is_active": user.is_active,
+        "target_user_name": target_user_fullname,
+        "performed_by_name": performer_name,
+        "hospital_name": hospital_name
+    }
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="USER_UPDATED",
+        entity_name="users",
+        entity_id=user.id,
+        old_values=old_values,
+        new_values=new_values,
+        hospital_id=user.hospital_id
+    )
 
     db.commit()
     db.refresh(user)
@@ -310,6 +568,7 @@ def update_user(
         "role": user.role,
         "first_name": user.first_name,
         "last_name": user.last_name,
+        "department": user.department,  # NEW
         "is_active": user.is_active,
         "message": "User updated successfully"
     }
@@ -321,7 +580,7 @@ def admin_reset_password(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role not in ["admin", "cmo"]:
+    if current_user.role not in ["admin", "cmo", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin only"
@@ -332,11 +591,35 @@ def admin_reset_password(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    if len(reset_data.new_password) < 8:
+
+    if current_user.role != "super_admin" and user.hospital_id != current_user.hospital_id:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot reset password for users in another hospital"
         )
+
+
     user.password_hash = get_password_hash(reset_data.new_password)
+
+    hospital_name = user.hospital.name if user.hospital else "Global"
+    performer_name = f"{current_user.first_name} {current_user.last_name} ({current_user.username})".strip()
+    target_user_fullname = f"{user.first_name} {user.last_name}".strip()
+
+    log_audit(
+        db=db,
+        user_id=current_user.id,
+        action="ADMIN_RESET_PASSWORD",
+        entity_name="users",
+        entity_id=user.id,
+        old_values=None,
+        new_values={
+            "reset_target_username": user.username,
+            "target_user_name": target_user_fullname,
+            "performed_by_name": performer_name,
+            "hospital_name": hospital_name
+        },
+        hospital_id=user.hospital_id
+    )
+
     db.commit()
     return {"message": f"Password reset successfully for {user.username}"}
