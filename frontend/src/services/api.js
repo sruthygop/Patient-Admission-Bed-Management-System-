@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '', // Dev server will proxy relative '/api' URLs to http://localhost:8000
+  baseURL: import.meta.env.VITE_API_URL || '',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -29,7 +29,7 @@ api.interceptors.response.use(
       // Clear token and user info, then redirect to login page
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      
+
       // Only redirect if we are not already on the login page
       if (window.location.pathname !== '/login') {
         window.location.href = '/login?expired=true';
