@@ -129,7 +129,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0d1528] text-slate-100 flex flex-col h-screen border-r border-slate-700/50 transform transition-transform duration-300 ease-in-out md:sticky md:top-0 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0d1528] text-slate-100 flex flex-col h-dvh border-r border-slate-700/50 transform transition-transform duration-300 ease-in-out md:sticky md:top-0 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
       >
         {/* Mobile close button */}
